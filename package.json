@@ -1,0 +1,32 @@
+{
+  "name": "uniteam",
+  "version": "0.1.0",
+  "private": true,
+  "description": "UniTeam — 대학생 팀 매칭 플랫폼 (monorepo root)",
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:backend": "npm --prefix backend run build",
+    "build:frontend": "npm --prefix frontend run build",
+    "lint": "npm --prefix backend run lint && npm --prefix frontend run lint",
+    "test": "npm --prefix backend test && npm --prefix frontend test -- --run",
+    "compose:up": "cd infra/docker && docker compose up -d --build",
+    "compose:down": "cd infra/docker && docker compose down",
+    "compose:logs": "cd infra/docker && docker compose logs -f",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.4",
+    "lint-staged": "^15.2.7",
+    "@commitlint/cli": "^19.4.0",
+    "@commitlint/config-conventional": "^19.2.2"
+  },
+  "lint-staged": {
+    "backend/src/**/*.{ts,js}": ["eslint --fix", "prettier --write"],
+    "frontend/src/**/*.{ts,vue}": ["eslint --fix", "prettier --write"],
+    "*.{json,md,yml,yaml}": ["prettier --write"]
+  },
+  "commitlint": {
+    "extends": ["@commitlint/config-conventional"]
+  }
+}

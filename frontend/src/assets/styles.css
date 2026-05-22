@@ -1,0 +1,397 @@
+/* ============================================================================
+ *  UniTeam — Apple-inspired design tokens
+ *  source: getdesign@latest add apple → apple/DESIGN.md
+ *
+ *  Principles:
+ *    - One blue accent (#0066cc) carries every interaction
+ *    - No gradients, no shadows on chrome (one product-image shadow only)
+ *    - SF Pro Display + SF Pro Text, negative letter-spacing on display sizes
+ *    - 17px body (not 16px), weight 600 for headlines (never 500/700)
+ *    - Edge-to-edge tiles alternating canvas / parchment / tile-dark
+ * ========================================================================== */
+
+:root {
+  /* ---- Colors ---- */
+  --c-primary: #0066cc;
+  --c-primary-focus: #0071e3;
+  --c-primary-on-dark: #2997ff;
+
+  --c-ink: #1d1d1f;
+  --c-ink-muted-80: #333333;
+  --c-ink-muted-48: #7a7a7a;
+  --c-body-muted: #cccccc;
+
+  --c-canvas: #ffffff;
+  --c-canvas-parchment: #f5f5f7;
+  --c-surface-pearl: #fafafc;
+  --c-surface-tile-1: #272729;
+  --c-surface-tile-2: #2a2a2c;
+  --c-surface-tile-3: #252527;
+  --c-surface-black: #000000;
+  --c-surface-chip-translucent: rgba(210, 210, 215, 0.64);
+
+  --c-divider-soft: #f0f0f0;
+  --c-hairline: #e0e0e0;
+
+  --c-on-primary: #ffffff;
+  --c-on-dark: #ffffff;
+
+  --c-danger: #b00020;
+  --c-success: #34a853;
+  --c-warning: #d97706;
+
+  /* ---- Radii ---- */
+  --r-none: 0;
+  --r-xs: 5px;
+  --r-sm: 8px;
+  --r-md: 11px;
+  --r-lg: 18px;
+  --r-pill: 9999px;
+
+  /* ---- Spacing (Apple scale) ---- */
+  --s-xxs: 4px;
+  --s-xs: 8px;
+  --s-sm: 12px;
+  --s-md: 17px;
+  --s-lg: 24px;
+  --s-xl: 32px;
+  --s-xxl: 48px;
+  --s-section: 80px;
+
+  /* ---- Elevation (exactly one) ---- */
+  --shadow-product: 0 5px 30px 3px rgba(0, 0, 0, 0.22);
+  --shadow-card-hairline: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+
+  /* ---- Fonts ---- */
+  --font-display:
+    'SF Pro Display', system-ui, -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', Inter, sans-serif;
+  --font-text:
+    'SF Pro Text', system-ui, -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', Inter, sans-serif;
+}
+
+/* ============================================================================
+ *  Base
+ * ========================================================================== */
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--c-canvas);
+  color: var(--c-ink);
+  font-family: var(--font-text);
+  font-size: 17px;          /* Apple: 17px body, not 16px */
+  line-height: 1.47;
+  letter-spacing: -0.374px;
+}
+a {
+  color: var(--c-primary);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* Headlines — SF Pro Display, weight 600, tight tracking */
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  color: var(--c-ink);
+  margin: 0 0 var(--s-sm);
+}
+h1 {
+  font-size: 56px;
+  font-weight: 600;
+  line-height: 1.07;
+  letter-spacing: -0.28px;
+}
+h2 {
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+h3 {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.14;
+}
+h4 {
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.19;
+  letter-spacing: 0.231px;
+}
+
+p {
+  margin: 0 0 var(--s-md);
+}
+code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 14px;
+  background: var(--c-canvas-parchment);
+  padding: 2px 6px;
+  border-radius: var(--r-xs);
+}
+
+/* ============================================================================
+ *  Layout primitives
+ * ========================================================================== */
+.container {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 0 var(--s-lg);
+}
+.container-wide {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 var(--s-lg);
+}
+
+.tile {
+  padding: var(--s-section) var(--s-lg);
+  text-align: center;
+}
+.tile-canvas {
+  background: var(--c-canvas);
+}
+.tile-parchment {
+  background: var(--c-canvas-parchment);
+}
+.tile-dark {
+  background: var(--c-surface-tile-1);
+  color: var(--c-on-dark);
+}
+.tile-dark h1,
+.tile-dark h2,
+.tile-dark h3,
+.tile-dark h4 {
+  color: var(--c-on-dark);
+}
+
+/* ============================================================================
+ *  Buttons — two grammars: pill (CTA) + utility rect (chrome)
+ * ========================================================================== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--font-text);
+  font-size: 17px;
+  font-weight: 400;
+  letter-spacing: -0.374px;
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  padding: 11px 22px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, transform 80ms ease;
+  text-decoration: none;
+  line-height: 1;
+}
+.btn:active {
+  transform: scale(0.98);
+}
+.btn:focus-visible {
+  outline: 2px solid var(--c-primary-focus);
+  outline-offset: 2px;
+}
+
+/* Primary pill (Action Blue) */
+.btn.primary,
+.btn-primary {
+  background: var(--c-primary);
+  color: var(--c-on-primary);
+  border-color: var(--c-primary);
+}
+.btn.primary:hover {
+  background: var(--c-primary-focus);
+  text-decoration: none;
+}
+
+/* Secondary pill — Pearl fill on Parchment canvas */
+.btn.secondary {
+  background: var(--c-surface-pearl);
+  color: var(--c-primary);
+  border-color: var(--c-divider-soft);
+}
+.btn.secondary:hover {
+  background: var(--c-canvas);
+}
+
+/* Dark utility (rectangular, store-style) */
+.btn.utility {
+  font-size: 14px;
+  letter-spacing: -0.224px;
+  padding: 8px 15px;
+  border-radius: var(--r-sm);
+  background: var(--c-ink);
+  color: var(--c-on-dark);
+  border-color: var(--c-ink);
+}
+.btn.utility:hover {
+  background: #000;
+}
+
+/* Hero store CTA — larger pill, weight 300 (rare) */
+.btn.hero {
+  font-size: 18px;
+  font-weight: 300;
+  padding: 14px 28px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Inline text link */
+.btn-link {
+  background: transparent;
+  border: 0;
+  color: var(--c-primary);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+/* ============================================================================
+ *  Cards — store-utility-card (white, 18px radius, hairline border)
+ * ========================================================================== */
+.card {
+  background: var(--c-canvas);
+  border: 1px solid var(--c-hairline);
+  border-radius: var(--r-lg);
+  padding: var(--s-lg);
+}
+.card-dark {
+  background: var(--c-surface-tile-1);
+  color: var(--c-on-dark);
+  border-color: transparent;
+}
+
+/* ============================================================================
+ *  Inputs
+ * ========================================================================== */
+.input,
+.textarea,
+.select {
+  width: 100%;
+  font-family: var(--font-text);
+  font-size: 17px;
+  letter-spacing: -0.374px;
+  padding: 12px 14px;
+  background: var(--c-canvas);
+  color: var(--c-ink);
+  border: 1px solid var(--c-hairline);
+  border-radius: var(--r-md);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.input:focus,
+.textarea:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--c-primary);
+  box-shadow: 0 0 0 4px rgba(0, 102, 204, 0.12);
+}
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--c-ink-muted-48);
+}
+
+/* Search-style pill input */
+.input-pill {
+  border-radius: var(--r-pill);
+  padding: 12px 20px;
+  height: 44px;
+}
+
+/* ============================================================================
+ *  Chips
+ * ========================================================================== */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-pearl);
+  color: var(--c-ink-muted-80);
+  font-size: 14px;
+  letter-spacing: -0.224px;
+  border: 1px solid var(--c-hairline);
+  cursor: pointer;
+  user-select: none;
+  line-height: 1;
+}
+.chip.active,
+.chip[aria-pressed='true'] {
+  background: var(--c-primary);
+  color: var(--c-on-primary);
+  border-color: var(--c-primary);
+}
+
+/* ============================================================================
+ *  Utility text
+ * ========================================================================== */
+.lead {
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.14;
+  letter-spacing: 0.196px;
+  color: var(--c-ink-muted-80);
+}
+.tagline {
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.19;
+  letter-spacing: 0.231px;
+}
+.caption {
+  font-size: 14px;
+  letter-spacing: -0.224px;
+  color: var(--c-ink-muted-48);
+}
+.fine-print {
+  font-size: 12px;
+  letter-spacing: -0.12px;
+  color: var(--c-ink-muted-48);
+}
+.muted {
+  color: var(--c-ink-muted-48);
+}
+
+/* ============================================================================
+ *  Toast stack (uses notifications store)
+ * ========================================================================== */
+.toast-stack {
+  position: fixed;
+  right: var(--s-lg);
+  bottom: var(--s-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-sm);
+  z-index: 1000;
+  pointer-events: none;
+}
+.toast {
+  background: var(--c-ink);
+  color: var(--c-on-dark);
+  padding: 12px 18px;
+  border-radius: var(--r-md);
+  font-size: 14px;
+  letter-spacing: -0.224px;
+  pointer-events: auto;
+  min-width: 240px;
+  max-width: 380px;
+  box-shadow: var(--shadow-product);
+}
+.toast.success { background: var(--c-success); }
+.toast.error { background: var(--c-danger); }
+.toast.warning { background: var(--c-warning); }

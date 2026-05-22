@@ -1,0 +1,105 @@
+# UniTeam — 개발/스테이지 통합 스택
+#
+# 인프라 고정값 (절대 변경 금지):
+#   FE 9518 / BE 9538 / 공개 도메인 p18.sumzip.com
+#
+# 서비스:
+#   - mariadb: 데이터 저장
+#   - mailhog: 개발용 SMTP 캡처
+#   - backend: Express API (9538)
+#   - frontend: Vite preview 서버 (9518)
+#   - nginx:   p18.sumzip.com 의 단일 entrypoint (443/80)
+#
+# 사용:
+#   cd infra/docker && docker compose up -d --build
+#   docker compose logs -f backend
+
+services:
+  mariadb:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpass_change_me}
+      MARIADB_DATABASE: ${DB_NAME:-uniteam}
+      MARIADB_USER: ${DB_USER:-uniteam}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-change_me_in_secret_store}
+    volumes:
+      - ./data/mariadb:/var/lib/mysql
+    ports:
+      - "127.0.0.1:3306:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      retries: 6
+      timeout: 5s
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025"   # SMTP
+      - "127.0.0.1:8025:8025"   # Web UI
+
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "9538"
+      PUBLIC_BASE_URL: https://p18.sumzip.com
+      APP_BASE_URL: http://localhost:9518
+      API_BASE_URL: http://localhost:9538
+      DB_HOST: mariadb
+      DB_PORT: "3306"
+      DB_USER: ${DB_USER:-uniteam}
+      DB_PASSWORD: ${DB_PASSWORD:-change_me_in_secret_store}
+      DB_NAME: ${DB_NAME:-uniteam}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      CORS_ORIGINS: http://localhost:9518,https://p18.sumzip.com
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:9538:9538"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9538/api/v1/health"]
+      interval: 15s
+      retries: 5
+      timeout: 5s
+
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: /api/v1
+    ports:
+      - "127.0.0.1:9518:9518"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9518/"]
+      interval: 15s
+      retries: 5
+      timeout: 5s
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./tls:/etc/nginx/tls:ro
+      - ./data/nginx/logs:/var/log/nginx
+    depends_on:
+      - backend
+      - frontend

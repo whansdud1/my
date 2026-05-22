@@ -1,0 +1,102 @@
+stages: [lint, test, secret-scan, build, deploy]
+
+variables:
+  NODE_VERSION: "20"
+
+# ---- 기본 캐시 (per-job 매트릭스로 override 가능) ----
+.node_cache: &node_cache
+  cache:
+    key:
+      files: [package-lock.json]
+    paths:
+      - .npm/
+      - frontend/node_modules/
+      - backend/node_modules/
+
+# ============================================================
+# Lint
+# ============================================================
+lint:backend:
+  stage: lint
+  image: node:${NODE_VERSION}
+  <<: *node_cache
+  script:
+    - cd backend && npm ci --prefer-offline && npm run lint
+
+lint:frontend:
+  stage: lint
+  image: node:${NODE_VERSION}
+  <<: *node_cache
+  script:
+    - cd frontend && npm ci --prefer-offline && npm run lint
+
+# ============================================================
+# Test
+# ============================================================
+test:backend:
+  stage: test
+  image: node:${NODE_VERSION}
+  services:
+    - name: mariadb:11
+      alias: mariadb
+  variables:
+    MARIADB_ROOT_PASSWORD: testpass
+    MARIADB_DATABASE: uniteam_test
+    MARIADB_USER: uniteam
+    MARIADB_PASSWORD: testpass
+    DB_HOST: mariadb
+    DB_USER: uniteam
+    DB_PASSWORD: testpass
+    DB_NAME: uniteam_test
+  <<: *node_cache
+  script:
+    - cd backend && npm ci --prefer-offline && npm test
+
+test:frontend:
+  stage: test
+  image: node:${NODE_VERSION}
+  <<: *node_cache
+  script:
+    - cd frontend && npm ci --prefer-offline && npm test -- --run
+
+# ============================================================
+# Secret scan (GitLeaks)
+# ============================================================
+secret-scan:gitleaks:
+  stage: secret-scan
+  image:
+    name: zricethezav/gitleaks:latest
+    entrypoint: [""]
+  script:
+    - gitleaks detect --no-git --redact -v --source .
+  allow_failure: false
+
+# ============================================================
+# Build (Docker)
+# ============================================================
+build:images:
+  stage: build
+  image: docker:27
+  services: [docker:27-dind]
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH =~ /^release\//'
+  script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - docker build -t "$CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHORT_SHA" -f backend/Dockerfile backend
+    - docker build -t "$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHORT_SHA" -f frontend/Dockerfile frontend
+    - docker push "$CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHORT_SHA"
+    - docker push "$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHORT_SHA"
+
+# ============================================================
+# Deploy (placeholder — 운영 인프라 결정 시 변경)
+# ============================================================
+deploy:production:
+  stage: deploy
+  image: alpine:3
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+  script:
+    - echo "→ p18.sumzip.com 배포 단계. 실제 명령은 운영팀 합의 후 추가."

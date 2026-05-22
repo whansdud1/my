@@ -396,3 +396,73 @@ Phase 13 Polish 는 각 스토리 종료 시 점진 적용 가능
 1. **CQ-01~03 명확화 미해결** — `/speckit.clarify` 실행 후 본 문서의 가정(WA-01~03)을 확정 결정으로 갱신.
 2. `/speckit.implement` 또는 `/speckit.implement T001` 형태로 구현 착수.
 3. 각 FE 태스크 시작 시 `/frontend-design "<해당 작업 설명>"` 호출.
+
+---
+
+## 진행 로그 (자동 갱신)
+
+> `/speckit.implement` 실행 결과. 최근 갱신: 2026-05-22.
+
+### Phase 1 — Setup ✅
+- [X] **T001** 워크스페이스 골격 (frontend/, backend/, infra/, .env.example, .gitignore, .editorconfig)
+- [X] **T002** 백엔드 부트스트랩 (Express + TS, PORT=9538, CORS 9518/p18.sumzip.com)
+- [X] **T003** 프론트엔드 부트스트랩 (Vite + Vue 3 + Pinia, port=9518, proxy /api→9538)
+- [X] **T004** Docker Compose + Nginx (p18.sumzip.com 단일 entrypoint)
+- [X] **T005** GitLab CI 파이프라인 (lint/test/secret-scan/build/deploy + GitLeaks)
+- [X] **T006** husky + lint-staged + commitlint + .editorconfig
+- [X] **T007** pino + X-Request-Id 미들웨어
+
+### Phase 2 — Foundational ✅
+- [X] **T008** mysql2 connection.ts + ping
+- [X] **T009** 001_init (users, availabilities, consents, domain_whitelist)
+- [X] **T010** 002_matching (projects, project_members, matching_recommendations)
+- [X] **T011** 003_collaboration (collab_integrations, collaboration_activities + 월 RANGE 파티션)
+- [X] **T012** 004_evaluation (evaluations, ai_scores, ratings, anomaly_flags)
+- [X] **T013** 005_subscription (subscriptions, partnerships, partnership_members)
+- [X] **T014** 006_admin (notifications, audit_logs, refresh_tokens, dsr_requests)
+- [X] **T015** Envelope + 글로벌 에러 핸들러 (RFC 7807)
+- [X] **T016** JWT auth (access 15m + refresh 14d httpOnly + 회전·재사용 감지)
+- [X] **T017** RBAC + assertOwner / assertSelfOrAdmin
+- [X] **T018** rate-limit (인증 60/min, 익명 20/min, /auth/* 10/min)
+- [X] **T019** audit log helper (audit_logs 저장 + 실패 fallback)
+- [X] **T020** zod 검증 미들웨어 (body/query/params)
+- [X] **T021** axios 인스턴스 + 인터셉터 + envelope unwrap
+- [X] **T022** Pinia 스토어 (auth/projects/notifications) + 영속화
+- [X] **T023** 라우터 + DefaultLayout
+- [X] **T024** 도메인 화이트리스트 시드 (.ac.kr, .edu, .ac.uk 등)
+
+### Phase 3 — US1 회원가입·프로필 ✅
+- [X] **T025-T027** users / availabilities / consents repositories
+- [X] **T028** auth service (bcrypt, 도메인 화이트리스트, 토큰 발급)
+- [X] **T029** email 어댑터 + 가입 인증 메일 템플릿
+- [X] **T030-T032** /auth/signup, /verify-email, /login, /logout, /refresh
+- [X] **T033-T036** /users/me, PATCH/DELETE, /availability, /:id, /survey
+- [X] **T037-T042** FE: Signup / Verify / Login / Profile Edit / Availability / Survey
+
+### Phase 4 — US2 프로젝트 등록·모집 ✅
+- [X] **T043-T044** projects / projectMembers repositories
+- [X] **T045-T046** projects service + invite service (FR-B6 동시 3건 가드)
+- [X] **T047-T050** /projects (CRUD + invite + respond)
+- [X] **T051** 알림 hook (notifications insert)
+- [X] **T052-T055** FE: Project New / List / Detail / Respond (Detail 통합)
+
+### Phase 5 — US3 매칭 추천 ✅
+- [X] **T056** matching repository + 7일 TTL
+- [X] **T057-T060** 역할 / 시간겹침 / 성향 / 평점·신뢰·다양성 가중치
+- [X] **T061** 결합기 (w1..w6 + exposureBoost) + breakdown
+- [X] **T063** GET /projects/:id/recommendations
+- [X] **T064-T066** FE: Recommendations 카드 그리드 + breakdown 툴팁
+
+### Phase 6 — US4 동료 평가·종합 평점 ✅
+- [X] **T067-T069** evaluations / ai_scores / ratings repositories (마이그레이션 내포)
+- [X] **T070** evaluation service (자기평가 금지 + 14일 마감 + UNIQUE)
+- [X] **T071** AI 평점 계산기
+- [X] **T072** 종합 평점 결합 (0.6·peer + 0.4·AI)
+- [X] **T075-T076** /projects/:id/evaluations, /users/:id/rating
+- [X] **T077-T079** FE: 평가 작성 / Inbox / 별점 패널
+
+### 미완(후속 세션 진행 예정)
+- T062 matching archive 잡 / T073-T074 리마인더·트리거 잡
+- US5~US10 (T080-T125) — 외부 연동·위험·일정·이상평가·결제·DSR
+- Polish (T126-T133) — i18n / 접근성 / 보안 강화 / 관측 / 부하 테스트
+
