@@ -1,0 +1,688 @@
+openapi: 3.0.3
+info:
+  title: UniTeam Team-Matching API
+  version: 1.0.0-draft
+  description: |
+    대학생 팀 매칭 플랫폼 REST API v1.
+    인증은 JWT(Authorization: Bearer) 또는 httpOnly Cookie.
+    모든 응답은 envelope `{ data, meta, errors }` 형태.
+servers:
+  - url: https://p18.sumzip.com/api/v1
+    description: Production (Nginx 프록시 → backend:9538)
+  - url: http://localhost:9538/api/v1
+    description: Local dev (backend 직접)
+
+tags:
+  - name: auth
+  - name: users
+  - name: projects
+  - name: matching
+  - name: collaboration
+  - name: schedule
+  - name: evaluation
+  - name: anomaly
+  - name: notifications
+  - name: billing
+  - name: admin
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/signup:
+    post:
+      tags: [auth]
+      summary: 회원가입 (이메일+비밀번호)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignupRequest' }
+      responses:
+        '201':
+          description: 가입 완료, 인증 메일 발송
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserEnvelope' }
+
+  /auth/verify-email:
+    post:
+      tags: [auth]
+      summary: 인증 메일 토큰 확인
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200': { description: 인증 완료 }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: 로그인
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: 토큰 발급
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenEnvelope' }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: 로그아웃
+      responses: { '204': { description: OK } }
+
+  /users/me:
+    get:
+      tags: [users]
+      summary: 내 프로필 조회
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserEnvelope' }
+    patch:
+      tags: [users]
+      summary: 내 프로필 수정
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserUpdate' }
+      responses: { '200': { description: OK } }
+    delete:
+      tags: [users]
+      summary: 계정 삭제 요청(GDPR/개인정보보호법)
+      responses: { '202': { description: 처리 접수 } }
+
+  /users/me/availability:
+    put:
+      tags: [users]
+      summary: 가용 시간표 갱신
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: '#/components/schemas/AvailabilitySlot' }
+      responses: { '200': { description: OK } }
+
+  /users/{userId}:
+    get:
+      tags: [users]
+      summary: 공개 프로필 조회(평점/리뷰 요약 포함)
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserPublicEnvelope' }
+
+  /projects:
+    get:
+      tags: [projects]
+      summary: 프로젝트 목록
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [RECRUIT, RUNNING, CLOSED] }
+        - in: query
+          name: type
+          schema: { type: string, enum: [CONTEST, CLASS, SELF] }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectListEnvelope' }
+    post:
+      tags: [projects]
+      summary: 프로젝트 생성
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectCreate' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectEnvelope' }
+
+  /projects/{projectId}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [projects]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectEnvelope' }
+    patch:
+      tags: [projects]
+      summary: 프로젝트 수정
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectUpdate' }
+      responses: { '200': { description: OK } }
+
+  /projects/{projectId}/recommendations:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [matching]
+      summary: 매칭 후보 추천 목록(top-N)
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10, maximum: 50 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RecommendationListEnvelope' }
+
+  /projects/{projectId}/invites:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [projects]
+      summary: 팀원 초대
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: integer, format: int64 }
+                role: { type: string }
+      responses: { '201': { description: 초대 발송 } }
+
+  /invites/{inviteId}/respond:
+    parameters:
+      - in: path
+        name: inviteId
+        required: true
+        schema: { type: integer, format: int64 }
+    post:
+      tags: [projects]
+      summary: 초대 수락/거절
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [ACCEPT, REJECT] }
+      responses: { '200': { description: OK } }
+
+  /projects/{projectId}/integrations:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [collaboration]
+      summary: 팀 연동 도구 상태
+      responses: { '200': { description: OK } }
+
+  /integrations/{provider}/oauth/start:
+    parameters:
+      - in: path
+        name: provider
+        required: true
+        schema: { type: string, enum: [ZOOM, DISCORD, NOTION, GOOGLE] }
+    get:
+      tags: [collaboration]
+      summary: OAuth 인증 시작(state·redirect_uri 반환)
+      responses: { '200': { description: OK } }
+
+  /integrations/{provider}/oauth/callback:
+    parameters:
+      - in: path
+        name: provider
+        required: true
+        schema: { type: string }
+    get:
+      tags: [collaboration]
+      summary: OAuth 콜백(서버 처리)
+      responses: { '302': { description: 리다이렉트 } }
+
+  /projects/{projectId}/activities:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [collaboration]
+      summary: 협업 활동 이벤트 조회
+      parameters:
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+        - in: query
+          name: user_id
+          schema: { type: integer, format: int64 }
+      responses: { '200': { description: OK } }
+
+  /projects/{projectId}/risk-signals:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [collaboration]
+      summary: 위험 신호 집계
+      responses: { '200': { description: OK } }
+
+  /projects/{projectId}/schedule/common-slots:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [schedule]
+      summary: 공통 가용 시간 제안
+      responses: { '200': { description: OK } }
+
+  /projects/{projectId}/schedule/events:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [schedule]
+      summary: 일정 생성(회의·마감)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScheduleEventCreate' }
+      responses: { '201': { description: OK } }
+
+  /projects/{projectId}/evaluations:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [evaluation]
+      summary: 동료 평가 제출(익명)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluationSubmit' }
+      responses: { '201': { description: 제출 완료 } }
+    get:
+      tags: [evaluation]
+      summary: (관리자) 프로젝트별 평가 조회
+      security: [ { bearerAuth: [] } ]
+      responses: { '200': { description: OK } }
+
+  /users/{userId}/rating:
+    parameters:
+      - in: path
+        name: userId
+        required: true
+        schema: { type: integer, format: int64 }
+    get:
+      tags: [evaluation]
+      summary: 사용자 종합 평점/별점/리뷰 요약
+      responses: { '200': { description: OK } }
+
+  /admin/anomalies:
+    get:
+      tags: [admin, anomaly]
+      summary: 이상 평가 검토 큐
+      responses: { '200': { description: OK } }
+
+  /admin/anomalies/{flagId}/resolve:
+    parameters:
+      - in: path
+        name: flagId
+        required: true
+        schema: { type: integer, format: int64 }
+    post:
+      tags: [admin, anomaly]
+      summary: 이상 평가 처리(승인/반려/제재)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [APPROVE, REJECT, SANCTION] }
+                note: { type: string }
+                sanction_weight: { type: number, format: float }
+      responses: { '200': { description: OK } }
+
+  /notifications:
+    get:
+      tags: [notifications]
+      summary: 내 알림 목록
+      responses: { '200': { description: OK } }
+
+  /notifications/{id}/read:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer, format: int64 }
+    post:
+      tags: [notifications]
+      responses: { '204': { description: OK } }
+
+  /billing/subscriptions:
+    post:
+      tags: [billing]
+      summary: 프리미엄 구독 시작
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubscriptionStart' }
+      responses: { '201': { description: 결제 페이지/리다이렉트 정보 반환 } }
+    delete:
+      tags: [billing]
+      summary: 구독 해지 예약
+      responses: { '202': { description: OK } }
+
+  /billing/webhooks/{provider}:
+    parameters:
+      - in: path
+        name: provider
+        required: true
+        schema: { type: string }
+    post:
+      tags: [billing]
+      summary: PG 결제 결과 콜백
+      security: []
+      responses: { '200': { description: OK } }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Page:
+      in: query
+      name: page
+      schema: { type: integer, default: 1, minimum: 1 }
+    Size:
+      in: query
+      name: size
+      schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+    ProjectId:
+      in: path
+      name: projectId
+      required: true
+      schema: { type: integer, format: int64 }
+
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        meta:
+          type: object
+          properties:
+            page: { type: integer }
+            size: { type: integer }
+            total: { type: integer }
+        errors:
+          type: array
+          items: { $ref: '#/components/schemas/Problem' }
+
+    Problem:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string }
+        detail: { type: string }
+        instance: { type: string }
+
+    SignupRequest:
+      type: object
+      required: [email, password, name, preferred_roles]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password, minLength: 8 }
+        name: { type: string }
+        gender: { type: string, enum: [M, F, OTHER, UNSPEC] }
+        grade: { type: integer, minimum: 1, maximum: 6 }
+        department: { type: string }
+        university: { type: string }
+        preferred_roles:
+          type: array
+          items: { type: string }
+        collaboration_style:
+          type: object
+          additionalProperties: true
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+
+    TokenEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                access_token: { type: string }
+                expires_in: { type: integer }
+                refresh_token: { type: string }
+
+    UserEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/User' }
+
+    UserPublicEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/UserPublic' }
+
+    User:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        email: { type: string }
+        name: { type: string }
+        gender: { type: string }
+        grade: { type: integer }
+        department: { type: string }
+        university: { type: string }
+        preferred_roles:
+          type: array
+          items: { type: string }
+        role_user: { type: string, enum: [STUDENT, PROFESSOR, ADMIN] }
+        trust_score: { type: number }
+        rating: { type: number, nullable: true }
+        subscription_tier: { type: string, enum: [FREE, PREMIUM] }
+
+    UserPublic:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        department: { type: string }
+        grade: { type: integer }
+        preferred_roles:
+          type: array
+          items: { type: string }
+        rating: { type: number, nullable: true }
+        review_summary: { type: string, nullable: true }
+        availability_summary: { type: string, nullable: true }
+
+    UserUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        gender: { type: string, enum: [M, F, OTHER, UNSPEC] }
+        grade: { type: integer }
+        department: { type: string }
+        university: { type: string }
+        preferred_roles:
+          type: array
+          items: { type: string }
+        collaboration_style:
+          type: object
+          additionalProperties: true
+        self_intro: { type: string }
+
+    AvailabilitySlot:
+      type: object
+      required: [weekday, start_min, end_min]
+      properties:
+        weekday: { type: integer, minimum: 0, maximum: 6 }
+        start_min: { type: integer, minimum: 0, maximum: 1439 }
+        end_min: { type: integer, minimum: 1, maximum: 1440 }
+        pref_night: { type: boolean, default: false }
+
+    ProjectCreate:
+      type: object
+      required: [title, type, target_size, required_roles]
+      properties:
+        title: { type: string }
+        description: { type: string }
+        type: { type: string, enum: [CONTEST, CLASS, SELF] }
+        target_size: { type: integer, minimum: 2, maximum: 12 }
+        required_roles:
+          type: array
+          items:
+            type: object
+            required: [role, count]
+            properties:
+              role: { type: string }
+              count: { type: integer, minimum: 1 }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        work_time_pref: { type: string, enum: [DAY, NIGHT, ANY] }
+
+    ProjectUpdate:
+      allOf:
+        - $ref: '#/components/schemas/ProjectCreate'
+        - type: object
+          properties:
+            status: { type: string, enum: [RECRUIT, RUNNING, CLOSED] }
+
+    ProjectEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/Project' }
+
+    ProjectListEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/Project' }
+
+    Project:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        owner_id: { type: integer, format: int64 }
+        title: { type: string }
+        description: { type: string }
+        type: { type: string }
+        target_size: { type: integer }
+        required_roles:
+          type: array
+          items:
+            type: object
+            properties:
+              role: { type: string }
+              count: { type: integer }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        work_time_pref: { type: string }
+        status: { type: string }
+
+    RecommendationListEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/Recommendation' }
+
+    Recommendation:
+      type: object
+      properties:
+        candidate: { $ref: '#/components/schemas/UserPublic' }
+        score: { type: number }
+        score_breakdown:
+          type: object
+          additionalProperties: { type: number }
+        availability_overlap_pct: { type: number }
+
+    ScheduleEventCreate:
+      type: object
+      required: [type, starts_at, ends_at]
+      properties:
+        type: { type: string, enum: [MEETING, DEADLINE, MILESTONE] }
+        title: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        attendees:
+          type: array
+          items: { type: integer, format: int64 }
+
+    EvaluationSubmit:
+      type: object
+      required: [evaluatee_id, contribution, communication, responsibility, satisfaction]
+      properties:
+        evaluatee_id: { type: integer, format: int64 }
+        contribution: { type: integer, minimum: 1, maximum: 5 }
+        communication: { type: integer, minimum: 1, maximum: 5 }
+        responsibility: { type: integer, minimum: 1, maximum: 5 }
+        satisfaction: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+
+    SubscriptionStart:
+      type: object
+      required: [plan]
+      properties:
+        plan: { type: string, enum: [PREMIUM_MONTHLY, PREMIUM_YEARLY] }
+        coupon: { type: string }
