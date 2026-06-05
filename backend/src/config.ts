@@ -16,6 +16,12 @@ function int(name: string, fallback: number): number {
   return n;
 }
 
+function bool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase());
+}
+
 export const config = {
   env: process.env.NODE_ENV ?? 'development',
   port: int('PORT', 9538),
@@ -50,6 +56,11 @@ export const config = {
     host: process.env.SMTP_HOST ?? 'mailhog',
     port: int('SMTP_PORT', 1025),
     from: process.env.SMTP_FROM ?? 'no-reply@p18.sumzip.com',
+    // 인증이 필요한 운영 SMTP(예: SES·SendGrid·Gmail)일 때 설정. 비우면 MailHog 등 무인증 SMTP로 간주.
+    user: process.env.SMTP_USER ?? '',
+    pass: process.env.SMTP_PASS ?? '',
+    // 465(SMTPS)면 true, 587/1025(STARTTLS·평문)면 false 기본.
+    secure: bool('SMTP_SECURE', int('SMTP_PORT', 1025) === 465),
   },
 
   oauthRedirectBase:

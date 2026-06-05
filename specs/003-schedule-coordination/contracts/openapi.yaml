@@ -135,9 +135,18 @@ components:
         provider: { type: string }
         syncState: { type: string, enum: [ACTIVE, EXPIRED, DISCONNECTED, NONE] }
         connectedAt: { type: string, format: date-time, nullable: true }
+    # 전역 에러 형식 — RFC 7807 problem+json (middlewares/error.ts, 001 Problem과 동일).
+    # Content-Type: application/problem+json. requestId는 instance 필드로 전달.
     Error:
       type: object
-      properties: { requestId: { type: string }, code: { type: string }, message: { type: string } }
+      properties:
+        type: { type: string, example: 'about:blank' }
+        title: { type: string, description: 사람이 읽는 요약 }
+        status: { type: integer, description: HTTP 상태 코드 }
+        code: { type: string, description: 도메인 에러 코드(UNAUTHORIZED/FORBIDDEN/VALIDATION_FAILED 등) }
+        detail: { type: string, description: 상세 메시지 }
+        instance: { type: string, description: 요청 추적 ID(requestId) }
+        details: { type: object, description: 검증 실패 시 필드별 오류(선택) }
   responses:
     Forbidden: { description: 권한 없음, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     Validation: { description: 입력 오류, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }

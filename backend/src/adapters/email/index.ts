@@ -1,8 +1,10 @@
+import nodemailer, { type Transporter } from 'nodemailer';
 import { config } from '../../config.js';
 import { logger } from '../../lib/logger.js';
 
-// 단순 SMTP 어댑터 — nodemailer 의존성을 추가하지 않고 logger 기반 stub.
-// 운영 환경에서는 SES/SendGrid 어댑터로 교체.
+// nodemailer 기반 SMTP 어댑터.
+// - 개발: MailHog 등 무인증 SMTP(127.0.0.1:1025)로 발송, SMTP 미가동이면 콘솔로 폴백.
+// - 운영: SMTP_USER/SMTP_PASS(SES·SendGrid·Gmail 등) 설정 시 실제 발송.
 
 export interface EmailMessage {
   to: string;
@@ -15,31 +17,69 @@ export interface EmailAdapter {
   send(msg: EmailMessage): Promise<void>;
 }
 
+// SMTP 미설정/연결 실패 시 폴백 — 메일 내용을 로그로 남겨 인증 링크 확인 가능.
 class ConsoleAdapter implements EmailAdapter {
+  constructor(private reason?: string) {}
   async send(msg: EmailMessage): Promise<void> {
-    logger.info(
-      { adapter: 'console', to: msg.to, subject: msg.subject, from: config.smtp.from },
-      'email send (stub)',
+    logger.warn(
+      { adapter: 'console', to: msg.to, subject: msg.subject, from: config.smtp.from, reason: this.reason },
+      'email send (콘솔 폴백 — 실제 SMTP 미발송)',
     );
-    logger.debug({ html: msg.html }, 'email body');
+    logger.info({ to: msg.to, text: msg.text }, 'email body (text)');
   }
 }
 
-class MailHogAdapter implements EmailAdapter {
+class SmtpAdapter implements EmailAdapter {
+  private transporter: Transporter;
+  constructor() {
+    const auth =
+      config.smtp.user && config.smtp.pass
+        ? { user: config.smtp.user, pass: config.smtp.pass }
+        : undefined;
+    this.transporter = nodemailer.createTransport({
+      host: config.smtp.host,
+      port: config.smtp.port,
+      secure: config.smtp.secure,
+      auth,
+      // MailHog 등 무인증 SMTP에서는 STARTTLS 미요구.
+      requireTLS: !!auth && !config.smtp.secure,
+    });
+  }
+
   async send(msg: EmailMessage): Promise<void> {
-    // MailHog는 인증 없이 SMTP 1025를 수신 — 실제 발송은 nodemailer 도입 시 활성화
-    // 1차 구현에서는 콘솔 로깅으로 대체하고, 운영 시점에 nodemailer 어댑터 추가
+    const info = await this.transporter.sendMail({
+      from: config.smtp.from,
+      to: msg.to,
+      subject: msg.subject,
+      html: msg.html,
+      text: msg.text,
+    });
     logger.info(
-      { adapter: 'mailhog', host: config.smtp.host, port: config.smtp.port, to: msg.to, subject: msg.subject },
-      'email send (mailhog stub — install nodemailer to enable)',
+      { adapter: 'smtp', host: config.smtp.host, port: config.smtp.port, to: msg.to, messageId: info.messageId },
+      'email sent',
     );
+  }
+}
+
+// SMTP 발송을 시도하되, 전송 실패 시 콘솔 폴백으로 회원가입 흐름이 막히지 않도록 감싼다.
+class ResilientAdapter implements EmailAdapter {
+  private smtp = new SmtpAdapter();
+  private fallback = new ConsoleAdapter('smtp send failed');
+  async send(msg: EmailMessage): Promise<void> {
+    try {
+      await this.smtp.send(msg);
+    } catch (err) {
+      logger.error({ err, to: msg.to }, 'SMTP 발송 실패 — 콘솔 폴백으로 전환');
+      await this.fallback.send(msg);
+    }
   }
 }
 
 let _adapter: EmailAdapter | null = null;
 export function getEmailAdapter(): EmailAdapter {
   if (_adapter) return _adapter;
-  _adapter = config.env === 'production' ? new ConsoleAdapter() : new MailHogAdapter();
+  // SMTP 호스트가 설정돼 있으면 실제 발송(실패 시 폴백), 아니면 콘솔.
+  _adapter = config.smtp.host ? new ResilientAdapter() : new ConsoleAdapter('SMTP_HOST 미설정');
   return _adapter;
 }
 

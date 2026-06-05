@@ -27,7 +27,7 @@ async function onSubmit() {
       email: email.value,
       password: password.value,
       name: name.value,
-      consents: ['TOS', 'PRIVACY', 'EVALUATION_DATA'],
+      consents: ['TOS', 'PRIVACY', 'COLLAB_METADATA'],
     });
     notify.success('가입 메일을 발송했습니다. 인증을 완료해주세요.');
     router.push({ name: 'verify', query: { email: email.value } });
@@ -42,7 +42,7 @@ async function onSubmit() {
 <template>
   <section class="auth-form">
     <h1>회원가입</h1>
-    <p class="hint">대학 이메일(.ac.kr) 사용을 권장합니다.</p>
+    <p class="hint">네이버·지메일·다음 등 사용 중인 이메일로 가입할 수 있습니다. 인증 메일이 발송됩니다.</p>
     <form @submit.prevent="onSubmit" class="card">
       <label>
         <span>이름</span>

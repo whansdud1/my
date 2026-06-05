@@ -37,13 +37,9 @@ export interface SignupInput {
 
 export async function signup(input: SignupInput): Promise<{ userId: number; verifyUrl: string }> {
   const email = input.email.trim().toLowerCase();
+  // extractDomain은 '@' 누락 등 기본 형식 오류를 함께 걸러낸다(라우터 zod .email()과 이중 방어).
+  // 도메인 화이트리스트 제한은 제거 — 네이버/지메일/다음 등 형식이 유효한 모든 이메일 허용.
   const domain = extractDomain(email);
-
-  // 화이트리스트 검증 (WA-02: .ac.kr 등)
-  const allowed = await Users.isDomainAllowed(domain);
-  if (!allowed) {
-    throw Errors.Validation('지원되지 않는 이메일 도메인입니다', { domain });
-  }
 
   // 중복 검사
   const existing = await Users.findByEmail(email);
