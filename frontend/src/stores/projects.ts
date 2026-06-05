@@ -70,7 +70,12 @@ export const useProjectStore = defineStore('projects', {
       this.current = data;
       return data;
     },
-    async create(payload: Partial<Project>) {
+    async create(
+      payload: Partial<Project> & {
+        requiredRoles?: Array<{ role: string; count: number }>;
+        preferredTimeNote?: string;
+      },
+    ) {
       const { data } = await api.post<Project>('/projects', payload);
       this.list.unshift(data);
       return data;

@@ -81,11 +81,22 @@ projectsRouter.post(
   validate({ body: createSchema }),
   async (req: AuthedRequest, res, next) => {
     try {
-      // requiredRoles: string[] → {role,count:1}[] 변환
+      // requiredRoles: string[] → {role,count:1}[] 변환 (문자열은 1명으로 간주)
       const roles = (req.body.requiredRoles ?? []).map(
         (r: string | { role: string; count: number }) =>
           typeof r === 'string' ? { role: r, count: 1 } : r,
       );
+
+      // 역할별 모집 인원 합계 + 팀장 본인 1명 = 총 모집 인원(capacity) 검증
+      if (roles.length > 0) {
+        const roleSum = roles.reduce((s: number, r: { count: number }) => s + r.count, 0);
+        if (roleSum !== req.body.capacity - 1) {
+          throw Errors.Validation(
+            `역할별 모집 인원 합계(${roleSum}명)에 팀장 1명을 더한 값이 총 모집 인원(${req.body.capacity}명)과 일치해야 합니다`,
+          );
+        }
+      }
+
       const id = await Projects.create({
         ownerId: req.user!.id,
         title: req.body.title,
