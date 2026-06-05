@@ -1,5 +1,47 @@
 # Intent - Plan
 
+[데이터베이스 설정]
+
+# 팀 데이터베이스 연결 정보
+
+**외부 접속 정보** (권장)
+- 호스트: mis.iptime.org
+- 포트: 13306
+- 사용자명: pioneer18
+- 데이터베이스: pioneer18
+- 비밀번호: pioneer26
+
+**연결 예시 (Node.js mysql2)**
+```javascript
+const mysql = require('mysql2/promise');
+
+const connection = await mysql.createConnection({
+  host: 'mis.iptime.org',
+  port: 13306,
+  user: 'pioneer18',
+  password: 'pioneer26',
+  database: 'pioneer18'
+});
+```
+
+**연결 예시 (터미널)**
+```bash
+mysql -h mis.iptime.org -P 13306 -u pioneer18 -ppioneer26 pioneer18
+```
+
+**내부 접속 정보** (서버 내부용)
+- 호스트: 192.168.0.91
+- 포트: 3306
+
+⚠️ **주의: Homebrew mysql 바이너리 사용 금지!**
+반드시 Docker 컨테이너를 통해 접속하세요:
+```bash
+# Docker 컨테이너 내부에서 실행
+docker exec -it mariadb mysql -u pioneer18 -ppioneer26 pioneer18
+```
+
+---
+
 [웹스택] Vue.js + Node.js
 
 # Vue.js + Node.js

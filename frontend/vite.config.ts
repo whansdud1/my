@@ -20,6 +20,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 9518,
     strictPort: true,
+    allowedHosts: ['p18.sumzip.com', '.sumzip.com', 'localhost'],
     proxy: {
       '/api': {
         target: 'http://localhost:9538',
@@ -31,6 +32,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 9518,
     strictPort: true,
+    allowedHosts: ['p18.sumzip.com', '.sumzip.com', 'localhost'],
   },
   build: {
     outDir: 'dist',
