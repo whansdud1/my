@@ -66,9 +66,9 @@
 ---
 
 ## Phase 7: Polish
-- [ ] **T021** [P] commonSlots 단위 테스트(러너 도입 시) — 교집합·차선·최소길이
-- [ ] **T022** [P] quickstart 실측 검증
-- [ ] **T023** [P] OpenAPI `/api/v1` 통합·에러 일관성
+- [X] **T021** [P] commonSlots 단위 테스트(jest ESM) — 교집합·차선·최소길이·정렬·dedup·경계 (10케이스 통과)
+- [X] **T022** [P] quickstart 실측 검증 — migrate(tsx) 멱등 OK, BE/FE 기동·엔드포인트 확인
+- [X] **T023** [P] OpenAPI `/api/v1` Error 스키마를 RFC7807 problem+json(type/title/status/code/detail/instance/details)으로 통일
 
 ## 의존성
 ```
