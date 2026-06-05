@@ -4,12 +4,15 @@ import { logger } from './lib/logger.js';
 import { closePool } from './db/connection.js';
 import { registerNotificationHandlers } from './services/notification/index.js';
 import { startNotificationWorker, stopNotificationWorker } from './jobs/notificationWorker.js';
+import { startScheduleReminderWorker, stopScheduleReminderWorker } from './jobs/scheduleReminderWorker.js';
 
 const app = createApp();
 
 // 002-notification-system — 이벤트 구독 등록 + outbox 워커 기동
 registerNotificationHandlers();
 startNotificationWorker();
+// 003-schedule-coordination — 리마인더 워커 기동
+startScheduleReminderWorker();
 
 const server = app.listen(config.port, () => {
   logger.info(
@@ -22,6 +25,7 @@ const server = app.listen(config.port, () => {
 const shutdown = (signal: string) => {
   logger.info({ signal }, 'shutdown initiated');
   stopNotificationWorker();
+  stopScheduleReminderWorker();
   server.close(async (err) => {
     if (err) logger.error({ err }, 'server.close error');
     await closePool().catch((e) => logger.error({ err: e }, 'pool close error'));

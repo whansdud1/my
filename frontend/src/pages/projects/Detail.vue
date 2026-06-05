@@ -83,7 +83,10 @@ async function sendInvite() {
               >매칭 후보 보기</RouterLink
             >
           </li>
-          <li><span class="muted">대시보드 · 일정 · 활동 — 곧 제공</span></li>
+          <li>
+            <RouterLink :to="`/projects/${id}/schedule`" class="btn">일정 조율</RouterLink>
+          </li>
+          <li><span class="muted">대시보드 · 활동 — 곧 제공</span></li>
         </ul>
       </div>
     </div>

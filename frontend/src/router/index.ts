@@ -54,6 +54,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../pages/projects/Recommendations.vue'),
     meta: { requiresAuth: true },
   },
+  {
+    path: '/projects/:id/schedule',
+    name: 'project-schedule',
+    component: () => import('../pages/projects/Schedule.vue'),
+    meta: { requiresAuth: true },
+  },
 
   // Evaluations (US4)
   {
