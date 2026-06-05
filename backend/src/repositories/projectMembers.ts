@@ -67,6 +67,39 @@ export async function countAcceptedByProject(projectId: number): Promise<number>
   return cnt;
 }
 
+// 본인이 속한(참여/대기/초대) 프로젝트 목록 — 프로필의 "내 프로젝트"용.
+export async function findProjectsByUser(
+  userId: number,
+): Promise<
+  Array<{
+    project_id: number;
+    title: string;
+    status: 'RECRUIT' | 'RUNNING' | 'CLOSED' | 'ARCHIVED';
+    role: string;
+    state: MemberState;
+    created_at: Date;
+  }>
+> {
+  const [rows] = (await getPool().query(
+    `SELECT pm.project_id, p.title, p.status, pm.role, pm.state, pm.created_at
+       FROM project_members pm
+       JOIN projects p ON p.id = pm.project_id
+      WHERE pm.user_id = ? AND pm.state IN ('APPLIED','ACCEPTED','INVITED')
+      ORDER BY pm.created_at DESC`,
+    [userId],
+  )) as unknown as [
+    Array<{
+      project_id: number;
+      title: string;
+      status: 'RECRUIT' | 'RUNNING' | 'CLOSED' | 'ARCHIVED';
+      role: string;
+      state: MemberState;
+      created_at: Date;
+    }>,
+  ];
+  return rows;
+}
+
 // 수락(ACCEPTED)된 멤버의 역할별 인원 수 — 남은 역할 계산 및 매칭 점수에 사용.
 export async function acceptedRoleCounts(projectId: number): Promise<Record<string, number>> {
   const [rows] = (await getPool().query(

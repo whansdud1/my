@@ -15,6 +15,15 @@ export interface Applicant {
   appliedAt: string | null;
 }
 
+export interface MyProject {
+  id: string;
+  title: string;
+  status: 'RECRUIT' | 'RUNNING' | 'CLOSED' | 'ARCHIVED';
+  myRole: string;
+  myState: 'INVITED' | 'ACCEPTED' | 'APPLIED';
+  recruitClosed: boolean;
+}
+
 export interface MyMembership {
   role: string;
   state: 'INVITED' | 'ACCEPTED' | 'LEFT' | 'REJECTED' | 'APPLIED';
@@ -64,6 +73,11 @@ export const useProjectStore = defineStore('projects', {
     async create(payload: Partial<Project>) {
       const { data } = await api.post<Project>('/projects', payload);
       this.list.unshift(data);
+      return data;
+    },
+    // 내가 지원/참여 중인 프로젝트 목록
+    async fetchMine() {
+      const { data } = await api.get<MyProject[]>('/projects/mine');
       return data;
     },
     // 지원자: 남은 역할 중 하나를 골라 지원

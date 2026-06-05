@@ -145,6 +145,27 @@ projectsRouter.get(
   },
 );
 
+// --- GET /projects/mine — 내가 지원/참여 중인 프로젝트 (':id'보다 먼저 등록) ---
+projectsRouter.get('/projects/mine', requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const rows = await Members.findProjectsByUser(req.user!.id);
+    res.json(
+      ok(
+        rows.map((r) => ({
+          id: String(r.project_id),
+          title: r.title,
+          status: r.status,
+          myRole: r.role,
+          myState: r.state, // APPLIED(대기) | ACCEPTED(참여) | INVITED(초대됨)
+          recruitClosed: r.status !== 'RECRUIT',
+        })),
+      ),
+    );
+  } catch (e) {
+    next(e);
+  }
+});
+
 // --- GET /projects/:id ---
 projectsRouter.get('/projects/:id', requireAuth, async (req: AuthedRequest, res, next) => {
   try {
