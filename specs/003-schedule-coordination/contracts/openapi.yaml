@@ -1,0 +1,143 @@
+openapi: 3.0.3
+info:
+  title: UniTeam Schedule Coordination API
+  version: 1.0.0
+  description: 일정 조율·캘린더 REST 계약 (003-schedule-coordination)
+servers:
+  - url: https://p18.sumzip.com/api/v1
+  - url: http://localhost:9538/api/v1
+security:
+  - bearerAuth: []
+paths:
+  /projects/{id}/schedule/common-slots:
+    get:
+      summary: 공통 가능 시간 후보
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: minMinutes, in: query, schema: { type: integer, default: 30 } }
+      responses:
+        '200':
+          description: 공통 슬롯 목록(겹침 인원·길이순)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalMembers: { type: integer }
+                  slots:
+                    type: array
+                    items: { $ref: '#/components/schemas/CommonSlot' }
+  /projects/{id}/schedule/events:
+    get:
+      summary: 프로젝트 일정 목록
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 일정 목록
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/ScheduleEvent' } }
+    post:
+      summary: 일정 생성(팀장)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventCreate' }
+      responses:
+        '201': { description: 생성됨, content: { application/json: { schema: { $ref: '#/components/schemas/ScheduleEvent' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+  /schedule/events/{eid}:
+    patch:
+      summary: 일정 변경
+      parameters: [{ name: eid, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/EventUpdate' } } } }
+      responses: { '200': { description: 변경됨 }, '403': { $ref: '#/components/responses/Forbidden' } }
+    delete:
+      summary: 일정 취소
+      parameters: [{ name: eid, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: 취소됨 }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /schedule/events/{eid}/rsvp:
+    post:
+      summary: 참석 응답
+      parameters: [{ name: eid, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [response], properties: { response: { type: string, enum: [ATTEND, DECLINE] } } }
+      responses: { '200': { description: 기록됨 } }
+  /calendar/connection:
+    get:
+      summary: 캘린더 연동 상태
+      responses: { '200': { description: 상태, content: { application/json: { schema: { $ref: '#/components/schemas/CalendarConnection' } } } } }
+    put:
+      summary: 캘린더 연동(토큰 등록)
+      responses: { '200': { description: 연동됨 } }
+    delete:
+      summary: 캘린더 연동 해제
+      responses: { '200': { description: 해제됨 } }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    CommonSlot:
+      type: object
+      properties:
+        weekday: { type: integer, description: 0=일 .. 6=토 }
+        startMin: { type: integer }
+        endMin: { type: integer }
+        availableCount: { type: integer }
+        totalMembers: { type: integer }
+    ScheduleEvent:
+      type: object
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        type: { type: string, enum: [MEETING, DEADLINE, MILESTONE] }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time, nullable: true }
+        status: { type: string, enum: [SCHEDULED, CANCELLED] }
+        rsvps:
+          type: array
+          items:
+            type: object
+            properties:
+              userId: { type: string }
+              name: { type: string }
+              response: { type: string, enum: [ATTEND, DECLINE, PENDING] }
+    EventCreate:
+      type: object
+      required: [type, title, startsAt]
+      properties:
+        type: { type: string, enum: [MEETING, DEADLINE, MILESTONE] }
+        title: { type: string }
+        description: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        reminderOffsetMin: { type: integer, default: 60 }
+        repeatWeeks: { type: integer, description: 반복 회의 주 수(0=단일) }
+    EventUpdate:
+      type: object
+      properties:
+        title: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+    CalendarConnection:
+      type: object
+      properties:
+        provider: { type: string }
+        syncState: { type: string, enum: [ACTIVE, EXPIRED, DISCONNECTED, NONE] }
+        connectedAt: { type: string, format: date-time, nullable: true }
+    Error:
+      type: object
+      properties: { requestId: { type: string }, code: { type: string }, message: { type: string } }
+  responses:
+    Forbidden: { description: 권한 없음, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Validation: { description: 입력 오류, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
