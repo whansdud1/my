@@ -19,9 +19,11 @@ export interface MyProject {
   id: string;
   title: string;
   status: 'RECRUIT' | 'RUNNING' | 'CLOSED' | 'ARCHIVED';
+  endDate: string | null;
   myRole: string;
   myState: 'INVITED' | 'ACCEPTED' | 'APPLIED';
   recruitClosed: boolean;
+  finished: boolean;
 }
 
 export interface MyMembership {
@@ -99,6 +101,11 @@ export const useProjectStore = defineStore('projects', {
     async decide(id: string, userId: string, action: 'ACCEPT' | 'REJECT') {
       const { data } = await api.post(`/projects/${id}/applicants/${userId}/decision`, { action });
       return data;
+    },
+    // 팀장: 모집 중 프로젝트 삭제
+    async remove(id: string) {
+      await api.delete(`/projects/${id}`);
+      this.list = this.list.filter((p) => p.id !== id);
     },
   },
 });

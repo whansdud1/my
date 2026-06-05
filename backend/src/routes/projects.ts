@@ -160,15 +160,22 @@ projectsRouter.get(
 projectsRouter.get('/projects/mine', requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     const rows = await Members.findProjectsByUser(req.user!.id);
+    const now = Date.now();
     res.json(
       ok(
         rows.map((r) => ({
           id: String(r.project_id),
           title: r.title,
           status: r.status,
+          endDate: r.ends_at ? r.ends_at.toISOString().slice(0, 10) : null,
           myRole: r.role,
           myState: r.state, // APPLIED(대기) | ACCEPTED(참여) | INVITED(초대됨)
           recruitClosed: r.status !== 'RECRUIT',
+          // 프로젝트 종료 = CLOSED/ARCHIVED 이거나 종료일이 지남
+          finished:
+            r.status === 'CLOSED' ||
+            r.status === 'ARCHIVED' ||
+            (r.ends_at !== null && r.ends_at.getTime() < now),
         })),
       ),
     );
@@ -232,6 +239,25 @@ projectsRouter.patch(
     }
   },
 );
+
+// --- DELETE /projects/:id — 팀장이 모집 중(RECRUIT)인 본인 프로젝트 삭제 ---
+projectsRouter.delete('/projects/:id', requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) throw Errors.Validation('잘못된 id');
+    const p = await Projects.findById(id);
+    if (!p) throw Errors.NotFound();
+    assertOwner(p.owner_id, req.user!.id, req.user!.role);
+    if (p.status !== 'RECRUIT') {
+      throw Errors.Validation('모집 중인 프로젝트만 삭제할 수 있습니다');
+    }
+    await Projects.remove(id);
+    await audit({ actorId: req.user!.id, action: 'PROJECT_DELETE', targetType: 'project', targetId: id });
+    res.json(ok({ deleted: true }));
+  } catch (e) {
+    next(e);
+  }
+});
 
 // --- GET /projects/:id/members ---
 projectsRouter.get('/projects/:id/members', requireAuth, async (req, res, next) => {
@@ -416,7 +442,7 @@ projectsRouter.post(
         project.status === 'RECRUIT' &&
         isFullyRecruited(project.required_roles, countsAfter, totalAfter, project.target_size)
       ) {
-        await Projects.patch(projectId, { status: 'RUNNING' });
+        await Projects.closeRecruit(projectId);
         await audit({
           actorId: req.user!.id,
           action: 'PROJECT_RECRUIT_CLOSE',

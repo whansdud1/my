@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue';
-import { useRoute, RouterLink } from 'vue-router';
+import { useRoute, useRouter, RouterLink } from 'vue-router';
 import { api } from '../../services/api';
 import { useProjectStore, type Applicant } from '../../stores/projects';
 import { useNotificationsStore } from '../../stores/notifications';
 
 const route = useRoute();
+const router = useRouter();
 const id = route.params.id as string;
 const store = useProjectStore();
 const notify = useNotificationsStore();
@@ -32,6 +33,8 @@ const myState = computed(() => proj.value?.myMembership?.state ?? null);
 const roles = computed(() => proj.value?.roles ?? []);
 const openRoles = computed(() => roles.value.filter((r) => r.remaining > 0));
 const recruitClosed = computed(() => !!proj.value?.recruitClosed);
+// 삭제 가능: 팀장이며 아직 모집 중(RECRUIT)일 때만
+const canDelete = computed(() => isOwner.value && proj.value?.status === 'RECRUIT');
 
 // 지원 가능 조건: 모집 중(미종료) + 팀장 아님 + (미지원 또는 과거 탈퇴/거절) + 남은 역할 존재
 const canApply = computed(
@@ -113,15 +116,35 @@ async function sendInvite() {
     inviteLoading.value = false;
   }
 }
+
+const deleting = ref(false);
+async function deleteProject() {
+  if (!window.confirm('이 프로젝트를 삭제할까요? 되돌릴 수 없습니다.')) return;
+  deleting.value = true;
+  try {
+    await store.remove(id);
+    notify.success('프로젝트를 삭제했습니다.');
+    router.push('/projects');
+  } catch (e) {
+    notify.error((e as { detail?: string }).detail ?? '삭제에 실패했습니다.');
+  } finally {
+    deleting.value = false;
+  }
+}
 </script>
 
 <template>
   <section class="page detail" v-if="proj">
     <header class="head">
       <h1>{{ proj.title }}</h1>
-      <span class="status" :class="{ closed: recruitClosed }">
-        {{ recruitClosed ? '팀원 모집 종료' : '팀원 모집 중' }}
-      </span>
+      <div class="head-right">
+        <span class="status" :class="{ closed: recruitClosed }">
+          {{ recruitClosed ? '팀원 모집 종료' : '팀원 모집 중' }}
+        </span>
+        <button v-if="canDelete" class="btn danger small" :disabled="deleting" @click="deleteProject">
+          {{ deleting ? '삭제 중…' : '프로젝트 삭제' }}
+        </button>
+      </div>
     </header>
     <p class="desc">{{ proj.description }}</p>
 
@@ -251,6 +274,20 @@ async function sendInvite() {
 .head h1 {
   font-size: 34px;
   margin: 0;
+}
+.head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.btn.danger {
+  background: #fdecec;
+  color: #c0392b;
+  border: 1px solid #f5c6c6;
+}
+.btn.danger:hover {
+  background: #fbdcdc;
 }
 .status {
   flex-shrink: 0;
