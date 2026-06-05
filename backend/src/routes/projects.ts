@@ -30,6 +30,35 @@ function projectDto(p: Projects.ProjectRow) {
   };
 }
 
+// 프로젝트가 정한 필요 역할별 needed/filled/remaining 현황.
+function roleSummary(
+  requiredRoles: Array<{ role: string; count: number }>,
+  acceptedCounts: Record<string, number>,
+) {
+  return (requiredRoles ?? []).map((r) => {
+    const filled = acceptedCounts[r.role] ?? 0;
+    return {
+      role: r.role,
+      needed: r.count,
+      filled,
+      remaining: Math.max(r.count - filled, 0),
+    };
+  });
+}
+
+// 팀원을 다 구했는지: 필요 역할이 있으면 모든 역할 충원, 없으면 정원 도달.
+function isFullyRecruited(
+  requiredRoles: Array<{ role: string; count: number }>,
+  acceptedCounts: Record<string, number>,
+  acceptedTotal: number,
+  targetSize: number,
+): boolean {
+  const roles = requiredRoles ?? [];
+  const allRolesFilled =
+    roles.length > 0 && roles.every((r) => (acceptedCounts[r.role] ?? 0) >= r.count);
+  return allRolesFilled || acceptedTotal >= targetSize;
+}
+
 // --- POST /projects ---
 const createSchema = z.object({
   title: z.string().min(2).max(150),
@@ -117,13 +146,29 @@ projectsRouter.get(
 );
 
 // --- GET /projects/:id ---
-projectsRouter.get('/projects/:id', requireAuth, async (req, res, next) => {
+projectsRouter.get('/projects/:id', requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) throw Errors.Validation('잘못된 id');
     const p = await Projects.findById(id);
     if (!p) throw Errors.NotFound();
-    res.json(ok(projectDto(p)));
+
+    const acceptedCounts = await Members.acceptedRoleCounts(id);
+    const acceptedTotal = await Members.countAcceptedByProject(id);
+    const mine = await Members.findOne(id, req.user!.id);
+    // 모집 종료 = 상태가 RECRUIT 가 아니거나, 팀원을 다 구한 경우
+    const recruitClosed =
+      p.status !== 'RECRUIT' ||
+      isFullyRecruited(p.required_roles, acceptedCounts, acceptedTotal, p.target_size);
+    res.json(
+      ok({
+        ...projectDto(p),
+        roles: roleSummary(p.required_roles, acceptedCounts),
+        isOwner: p.owner_id === req.user!.id,
+        myMembership: mine ? { role: mine.role, state: mine.state } : null,
+        recruitClosed,
+      }),
+    );
   } catch (e) {
     next(e);
   }
@@ -189,6 +234,171 @@ projectsRouter.get('/projects/:id/members', requireAuth, async (req, res, next) 
     next(e);
   }
 });
+
+// --- POST /projects/:id/apply — 지원자가 남은 역할 중 하나를 골라 지원 ---
+const applySchema = z.object({ role: z.string().min(1).max(40) });
+projectsRouter.post(
+  '/projects/:id/apply',
+  requireAuth,
+  validate({ body: applySchema }),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const projectId = Number(req.params.id);
+      if (!Number.isFinite(projectId)) throw Errors.Validation('잘못된 id');
+      const project = await Projects.findById(projectId);
+      if (!project) throw Errors.NotFound();
+
+      const userId = req.user!.id;
+      if (project.owner_id === userId) throw Errors.Validation('본인 프로젝트에는 지원할 수 없습니다');
+      if (project.status !== 'RECRUIT') throw Errors.Validation('모집 중인 프로젝트가 아닙니다');
+
+      const role = req.body.role as string;
+      const required = (project.required_roles ?? []) as Array<{ role: string; count: number }>;
+      const reqRole = required.find((r) => r.role === role);
+      if (!reqRole) throw Errors.Validation('이 프로젝트에서 모집하지 않는 역할입니다');
+
+      // 이미 활성/대기 멤버면 중복 지원 차단 (LEFT/REJECTED 는 재지원 허용)
+      const existing = await Members.findOne(projectId, userId);
+      if (existing && ['ACCEPTED', 'INVITED', 'APPLIED'].includes(existing.state)) {
+        const msg =
+          existing.state === 'ACCEPTED'
+            ? '이미 이 팀의 멤버입니다'
+            : existing.state === 'APPLIED'
+              ? '이미 지원한 프로젝트입니다'
+              : '이미 초대를 받은 프로젝트입니다';
+        throw Errors.Conflict(msg);
+      }
+
+      // 역할 잔여 슬롯 확인
+      const acceptedCounts = await Members.acceptedRoleCounts(projectId);
+      const filled = acceptedCounts[role] ?? 0;
+      if (reqRole.count - filled <= 0) throw Errors.Conflict('해당 역할은 이미 마감되었습니다');
+
+      // 팀 정원 확인
+      const acceptedTotal = await Members.countAcceptedByProject(projectId);
+      if (acceptedTotal >= project.target_size) throw Errors.Conflict('팀 정원이 가득 찼습니다');
+
+      const memberId = await Members.apply(projectId, userId, role);
+      await audit({
+        actorId: userId,
+        action: 'PROJECT_APPLY',
+        targetType: 'project',
+        targetId: projectId,
+        meta: { role },
+      });
+      res.status(201).json(ok({ memberId: String(memberId), role, state: 'APPLIED' }));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// --- GET /projects/:id/applicants — 팀장: 지원자(대기) 목록 ---
+projectsRouter.get(
+  '/projects/:id/applicants',
+  requireAuth,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const projectId = Number(req.params.id);
+      if (!Number.isFinite(projectId)) throw Errors.Validation('잘못된 id');
+      const project = await Projects.findById(projectId);
+      if (!project) throw Errors.NotFound();
+      if (project.owner_id !== req.user!.id && req.user!.role !== 'ADMIN') {
+        throw Errors.Forbidden('지원자 조회 권한이 없습니다');
+      }
+      const rows = await Members.findApplicants(projectId);
+      res.json(
+        ok(
+          rows.map((r) => ({
+            userId: String(r.user_id),
+            name: r.name ?? '익명',
+            role: r.role,
+            appliedAt: r.created_at?.toISOString() ?? null,
+          })),
+        ),
+      );
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// --- POST /projects/:id/applicants/:userId/decision — 팀장: 수락/거절 ---
+const decisionSchema = z.object({ action: z.enum(['ACCEPT', 'REJECT']) });
+projectsRouter.post(
+  '/projects/:id/applicants/:userId/decision',
+  requireAuth,
+  validate({ body: decisionSchema }),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const projectId = Number(req.params.id);
+      const applicantId = Number(req.params.userId);
+      if (!Number.isFinite(projectId) || !Number.isFinite(applicantId)) {
+        throw Errors.Validation('잘못된 id');
+      }
+      const project = await Projects.findById(projectId);
+      if (!project) throw Errors.NotFound();
+      if (project.owner_id !== req.user!.id && req.user!.role !== 'ADMIN') {
+        throw Errors.Forbidden('지원자 처리 권한이 없습니다');
+      }
+
+      const member = await Members.findOne(projectId, applicantId);
+      if (!member || member.state !== 'APPLIED') throw Errors.NotFound('대기 중인 지원자가 아닙니다');
+
+      if (req.body.action === 'REJECT') {
+        await Members.setState(member.id, 'REJECTED');
+        await audit({
+          actorId: req.user!.id,
+          action: 'PROJECT_APPLY_REJECT',
+          targetType: 'project',
+          targetId: projectId,
+          meta: { applicantId, role: member.role },
+        });
+        res.json(ok({ userId: String(applicantId), state: 'REJECTED' }));
+        return;
+      }
+
+      // ACCEPT — 수락 직전 역할 잔여/정원 재확인
+      const required = (project.required_roles ?? []) as Array<{ role: string; count: number }>;
+      const reqRole = required.find((r) => r.role === member.role);
+      const acceptedCounts = await Members.acceptedRoleCounts(projectId);
+      const filled = acceptedCounts[member.role] ?? 0;
+      if (reqRole && reqRole.count - filled <= 0) throw Errors.Conflict('해당 역할은 이미 마감되었습니다');
+      const acceptedTotal = await Members.countAcceptedByProject(projectId);
+      if (acceptedTotal >= project.target_size) throw Errors.Conflict('팀 정원이 가득 찼습니다');
+
+      await Members.setState(member.id, 'ACCEPTED', new Date());
+      await audit({
+        actorId: req.user!.id,
+        action: 'PROJECT_APPLY_ACCEPT',
+        targetType: 'project',
+        targetId: projectId,
+        meta: { applicantId, role: member.role },
+      });
+
+      // 팀원을 다 구했으면 자동으로 모집 종료(RECRUIT→RUNNING) → 이후 지원 차단
+      const countsAfter = await Members.acceptedRoleCounts(projectId);
+      const totalAfter = await Members.countAcceptedByProject(projectId);
+      let recruitClosed = project.status !== 'RECRUIT';
+      if (
+        project.status === 'RECRUIT' &&
+        isFullyRecruited(project.required_roles, countsAfter, totalAfter, project.target_size)
+      ) {
+        await Projects.patch(projectId, { status: 'RUNNING' });
+        await audit({
+          actorId: req.user!.id,
+          action: 'PROJECT_RECRUIT_CLOSE',
+          targetType: 'project',
+          targetId: projectId,
+        });
+        recruitClosed = true;
+      }
+      res.json(ok({ userId: String(applicantId), state: 'ACCEPTED', recruitClosed }));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 
 // --- POST /projects/:id/invites ---
 const inviteSchema = z.object({

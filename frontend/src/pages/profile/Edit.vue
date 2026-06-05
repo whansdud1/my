@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue';
 import { api } from '../../services/api';
 import { useNotificationsStore } from '../../stores/notifications';
+import { PROJECT_ROLES } from '../../constants/roles';
 
 interface Profile {
   name: string;
@@ -13,7 +14,7 @@ interface Profile {
 }
 
 const profile = ref<Profile>({ name: '', preferredRoles: [] });
-const ALL_ROLES = ['기획', '발표', '디자인', '자료조사', '문서작성', '일정관리', '개발', '데이터'];
+const ALL_ROLES = PROJECT_ROLES;
 const loading = ref(false);
 const notify = useNotificationsStore();
 
@@ -46,7 +47,7 @@ function toggleRole(r: string) {
 </script>
 
 <template>
-  <section class="profile">
+  <section class="page profile">
     <h1>프로필 편집</h1>
     <form @submit.prevent="save" class="card">
       <label>

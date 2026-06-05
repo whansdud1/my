@@ -3,6 +3,7 @@ import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useProjectStore } from '../../stores/projects';
 import { useNotificationsStore } from '../../stores/notifications';
+import { PROJECT_ROLES } from '../../constants/roles';
 
 const form = reactive({
   title: '',
@@ -14,7 +15,7 @@ const form = reactive({
   preferredTimeNote: '',
 });
 
-const ALL_ROLES = ['기획', '발표', '디자인', '자료조사', '문서작성', '일정관리', '개발', '데이터'];
+const ALL_ROLES = PROJECT_ROLES;
 const loading = ref(false);
 const router = useRouter();
 const projects = useProjectStore();
@@ -41,7 +42,7 @@ async function submit() {
 </script>
 
 <template>
-  <section class="new-project">
+  <section class="page new-project">
     <h1>새 프로젝트</h1>
     <form @submit.prevent="submit" class="card">
       <label>
