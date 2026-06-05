@@ -3,6 +3,7 @@ import { RouterLink } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { useNotificationsStore } from '../stores/notifications';
 import { computed } from 'vue';
+import NotificationBell from '../components/NotificationBell.vue';
 
 const auth = useAuthStore();
 const notify = useNotificationsStore();
@@ -19,6 +20,7 @@ const isAuthed = computed(() => !!auth.accessToken);
         <RouterLink to="/projects">프로젝트</RouterLink>
         <RouterLink v-if="isAuthed" to="/evaluations">평가</RouterLink>
         <RouterLink v-if="isAuthed" to="/profile">프로필</RouterLink>
+        <NotificationBell v-if="isAuthed" />
         <RouterLink v-if="!isAuthed" to="/login">로그인</RouterLink>
         <button v-else class="nav-logout" @click="auth.logout()">로그아웃</button>
       </nav>

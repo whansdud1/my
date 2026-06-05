@@ -4,6 +4,7 @@ import * as Members from '../../repositories/projectMembers.js';
 import * as Users from '../../repositories/users.js';
 import { getPool } from '../../db/connection.js';
 import { audit } from '../audit.js';
+import { notify } from '../notification/index.js';
 
 const MAX_ACTIVE_PROJECTS = 3; // FR-B6
 
@@ -62,12 +63,15 @@ export async function sendInvite(input: InviteInput): Promise<{ memberId: number
     meta: { projectId: input.projectId, invitedUserId },
   });
 
-  // 알림 적재 (이메일 전송은 후속 잡)
-  await getPool().query(
-    `INSERT INTO notifications (user_id, type, body)
-     VALUES (?, 'INVITE', CAST(? AS JSON))`,
-    [invitedUserId, JSON.stringify({ projectId: input.projectId, projectTitle: project.title, memberId })],
-  );
+  // 알림 — 합류 요청(채널 라우팅·이메일 전송은 notification 시스템이 담당)
+  notify('TEAM_JOIN_REQUEST', {
+    recipientId: invitedUserId,
+    projectId: input.projectId,
+    title: `${project.title} 팀 합류 요청`,
+    body: `'${project.title}' 프로젝트에 ${input.role} 역할로 초대되었습니다.`,
+    deepLink: `/projects/${input.projectId}`,
+    targetRef: `member:${memberId}`,
+  });
 
   return { memberId, userId: invitedUserId };
 }
@@ -113,6 +117,20 @@ export async function respond(memberId: number, userId: number, accept: boolean)
       targetType: 'project_member',
       targetId: memberId,
     });
+
+    // 알림 — 합류 결과를 초대한 사람(팀장)에게
+    if (member.invited_by) {
+      const responder = await Users.findById(userId);
+      notify('TEAM_JOIN_RESULT', {
+        recipientId: member.invited_by,
+        projectId: member.pid,
+        title: accept ? '팀 합류 수락됨' : '팀 합류 거절됨',
+        body: `${responder?.name ?? '초대한 사용자'}님이 합류 요청을 ${accept ? '수락' : '거절'}했습니다.`,
+        deepLink: `/projects/${member.pid}`,
+        targetRef: `member:${memberId}`,
+      });
+    }
+
     return { state: accept ? 'ACCEPTED' : 'REJECTED' };
   } catch (e) {
     await conn.rollback();

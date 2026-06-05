@@ -15,6 +15,7 @@ import { usersRouter } from './routes/users.js';
 import { projectsRouter } from './routes/projects.js';
 import { invitesRouter } from './routes/invites.js';
 import { evaluationsRouter } from './routes/evaluations.js';
+import { notificationsRouter } from './routes/notifications.js';
 
 export function createApp(): Express {
   const app = express();
@@ -48,6 +49,7 @@ export function createApp(): Express {
   app.use('/api/v1', projectsRouter);
   app.use('/api/v1', invitesRouter);
   app.use('/api/v1', evaluationsRouter);
+  app.use('/api/v1', notificationsRouter);
 
   // 루트는 운영에서는 Nginx가 frontend로 라우팅 — 백엔드 단독 호출 시 단순 응답
   app.get('/', (_req, res) => {

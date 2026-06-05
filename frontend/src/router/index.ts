@@ -69,6 +69,14 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
 
+  // Notifications (002-notification-system)
+  {
+    path: '/settings/notifications',
+    name: 'notification-settings',
+    component: () => import('../pages/settings/Notifications.vue'),
+    meta: { requiresAuth: true },
+  },
+
   // 404 fallback
   { path: '/:pathMatch(.*)*', component: () => import('../pages/NotFound.vue') },
 ];

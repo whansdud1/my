@@ -2,8 +2,14 @@ import { createApp } from './app.js';
 import { config } from './config.js';
 import { logger } from './lib/logger.js';
 import { closePool } from './db/connection.js';
+import { registerNotificationHandlers } from './services/notification/index.js';
+import { startNotificationWorker, stopNotificationWorker } from './jobs/notificationWorker.js';
 
 const app = createApp();
+
+// 002-notification-system — 이벤트 구독 등록 + outbox 워커 기동
+registerNotificationHandlers();
+startNotificationWorker();
 
 const server = app.listen(config.port, () => {
   logger.info(
@@ -15,6 +21,7 @@ const server = app.listen(config.port, () => {
 // Graceful shutdown — SIGTERM/SIGINT 받으면 30s 내 종료
 const shutdown = (signal: string) => {
   logger.info({ signal }, 'shutdown initiated');
+  stopNotificationWorker();
   server.close(async (err) => {
     if (err) logger.error({ err }, 'server.close error');
     await closePool().catch((e) => logger.error({ err: e }, 'pool close error'));
