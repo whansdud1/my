@@ -44,24 +44,21 @@ export interface InsertUser {
   emailDomain: string;
   passwordHash: string;
   name: string;
-  emailVerifyToken: string;
-  emailVerifyExpiresAt: Date;
   role?: 'STUDENT' | 'PROFESSOR' | 'ADMIN';
 }
 
 export async function insert(u: InsertUser): Promise<number> {
+  // 이메일 인증 절차 제거 — 가입 즉시 인증완료(email_verified_at) & ACTIVE 상태로 생성.
   const [res] = (await getPool().query(
     `INSERT INTO users
-       (email, email_domain, password_hash, name, email_verify_token, email_verify_expires_at,
+       (email, email_domain, password_hash, name, email_verified_at,
         preferred_roles, collaboration_style, role_user, status)
-     VALUES (?, ?, ?, ?, ?, ?, JSON_ARRAY(), JSON_OBJECT(), ?, 'PENDING')`,
+     VALUES (?, ?, ?, ?, NOW(3), JSON_ARRAY(), JSON_OBJECT(), ?, 'ACTIVE')`,
     [
       u.email,
       u.emailDomain,
       u.passwordHash,
       u.name,
-      u.emailVerifyToken,
-      u.emailVerifyExpiresAt,
       u.role ?? 'STUDENT',
     ],
   )) as unknown as [{ insertId: number }];
@@ -107,23 +104,6 @@ export async function updateProfile(id: number, p: UpdateProfile): Promise<void>
   if (fields.length === 0) return;
   params.push(id);
   await getPool().query(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`, params);
-}
-
-export async function markEmailVerified(token: string): Promise<UserRow | null> {
-  const pool = getPool();
-  const [rows] = (await pool.query(
-    `SELECT * FROM users WHERE email_verify_token = ? AND email_verify_expires_at > NOW(3) LIMIT 1`,
-    [token],
-  )) as unknown as [UserRow[]];
-  const user = rows[0];
-  if (!user) return null;
-  await pool.query(
-    `UPDATE users SET email_verified_at = NOW(3), email_verify_token = NULL,
-         email_verify_expires_at = NULL, status = 'ACTIVE'
-     WHERE id = ?`,
-    [user.id],
-  );
-  return user;
 }
 
 export async function softDelete(id: number): Promise<void> {

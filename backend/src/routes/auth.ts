@@ -33,29 +33,8 @@ authRouter.post(
   async (req, res, next) => {
     try {
       const result = await AuthSvc.signup({ ...req.body, ip: req.ip });
-      res.status(201).json(
-        ok({
-          userId: String(result.userId),
-          // 운영에서는 verifyUrl 노출하지 않음(메일로만). 개발 편의로 dev에서만 포함.
-          ...(config.env !== 'production' ? { verifyUrl: result.verifyUrl } : {}),
-        }),
-      );
-    } catch (e) {
-      next(e);
-    }
-  },
-);
-
-// --- POST /auth/verify-email ---
-const verifySchema = z.object({ token: z.string().min(10).max(128) });
-authRouter.post(
-  '/auth/verify-email',
-  authRateLimit,
-  validate({ body: verifySchema }),
-  async (req, res, next) => {
-    try {
-      const result = await AuthSvc.verifyEmail(req.body.token);
-      res.json(ok({ userId: String(result.userId), verified: true }));
+      // 이메일 인증 제거 — 가입 즉시 활성화되므로 userId만 반환.
+      res.status(201).json(ok({ userId: String(result.userId) }));
     } catch (e) {
       next(e);
     }

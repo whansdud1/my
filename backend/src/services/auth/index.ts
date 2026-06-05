@@ -1,10 +1,7 @@
 import bcrypt from 'bcrypt';
-import crypto from 'node:crypto';
 import { Errors } from '../../lib/envelope.js';
-import { config } from '../../config.js';
 import * as Users from '../../repositories/users.js';
 import * as Consents from '../../repositories/consents.js';
-import { getEmailAdapter, renderVerifyEmail } from '../../adapters/email/index.js';
 import { signAccess, issueRefresh, hashRefresh } from './tokens.js';
 import { getPool } from '../../db/connection.js';
 import { audit } from '../audit.js';
@@ -35,7 +32,7 @@ export interface SignupInput {
   ip?: string;
 }
 
-export async function signup(input: SignupInput): Promise<{ userId: number; verifyUrl: string }> {
+export async function signup(input: SignupInput): Promise<{ userId: number }> {
   const email = input.email.trim().toLowerCase();
   // extractDomain은 '@' 누락 등 기본 형식 오류를 함께 걸러낸다(라우터 zod .email()과 이중 방어).
   // 도메인 화이트리스트 제한은 제거 — 네이버/지메일/다음 등 형식이 유효한 모든 이메일 허용.
@@ -54,25 +51,23 @@ export async function signup(input: SignupInput): Promise<{ userId: number; veri
   }
 
   const passwordHash = await hashPassword(input.password);
-  const verifyToken = crypto.randomBytes(32).toString('hex');
-  const verifyExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
+  // 이메일 인증 절차 제거 — 토큰 발급/메일 발송 없이 즉시 활성 사용자로 생성.
   const userId = await Users.insert({
     email,
     emailDomain: domain,
     passwordHash,
     name: input.name.trim(),
-    emailVerifyToken: verifyToken,
-    emailVerifyExpiresAt: verifyExpires,
   });
 
   await Consents.record(userId, input.consents);
   await Users.updateProfile(userId, {}); // 기본 빈 프로필 보장(no-op이지만 호출 의도 명시)
 
-  const verifyUrl = `${config.publicBaseUrl}/verify?token=${verifyToken}`;
-  const msg = renderVerifyEmail({ name: input.name, verifyUrl });
-  msg.to = email;
-  await getEmailAdapter().send(msg);
+  // 평점 초기화 (기존에는 이메일 인증 완료 시점에 수행하던 것을 가입 시점으로 이동)
+  await getPool().query(
+    `INSERT IGNORE INTO ratings (user_id, stars, evaluation_count) VALUES (?, 0.00, 0)`,
+    [userId],
+  );
 
   await audit({
     actorId: userId,
@@ -84,20 +79,7 @@ export async function signup(input: SignupInput): Promise<{ userId: number; veri
   });
 
   logger.info({ userId, email, domain }, 'user signup');
-  return { userId, verifyUrl };
-}
-
-export async function verifyEmail(token: string): Promise<{ userId: number }> {
-  const user = await Users.markEmailVerified(token);
-  if (!user) throw Errors.Validation('유효하지 않거나 만료된 인증 링크입니다');
-
-  // 평점 초기화
-  await getPool().query(
-    `INSERT IGNORE INTO ratings (user_id, stars, evaluation_count) VALUES (?, 0.00, 0)`,
-    [user.id],
-  );
-  await audit({ actorId: user.id, action: 'EMAIL_VERIFIED', targetType: 'user', targetId: user.id });
-  return { userId: user.id };
+  return { userId };
 }
 
 export interface LoginInput {
@@ -113,7 +95,6 @@ export async function login(input: LoginInput) {
   if (!user) throw Errors.Unauthorized('이메일 또는 비밀번호가 올바르지 않습니다');
   if (user.status === 'DELETED') throw Errors.Unauthorized('탈퇴 처리된 계정입니다');
   if (user.status === 'SUSPENDED') throw Errors.Forbidden('이용 정지된 계정입니다');
-  if (!user.email_verified_at) throw Errors.Forbidden('이메일 인증을 완료해주세요');
 
   const ok = await verifyPassword(input.password, user.password_hash);
   if (!ok) {

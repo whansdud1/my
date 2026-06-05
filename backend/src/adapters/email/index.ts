@@ -84,25 +84,6 @@ export function getEmailAdapter(): EmailAdapter {
 }
 
 // --- 메일 템플릿 ---
-export function renderVerifyEmail(opts: { name: string; verifyUrl: string }): EmailMessage {
-  const { name, verifyUrl } = opts;
-  return {
-    to: '',
-    subject: '[UniTeam] 이메일 인증을 완료해주세요',
-    html: `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-        <h2>UniTeam 가입을 환영합니다, ${name}님</h2>
-        <p>아래 버튼을 눌러 이메일 인증을 완료해주세요. 링크는 24시간 동안 유효합니다.</p>
-        <p style="margin: 24px 0;">
-          <a href="${verifyUrl}" style="display:inline-block; padding:10px 18px; background:#2563eb; color:#fff; border-radius:8px; text-decoration:none;">이메일 인증하기</a>
-        </p>
-        <p style="color:#6b7280; font-size: 0.85rem;">버튼이 작동하지 않으면 다음 링크를 복사하여 브라우저 주소창에 붙여넣어 주세요:<br/><code>${verifyUrl}</code></p>
-      </div>
-    `,
-    text: `UniTeam 이메일 인증: ${verifyUrl}`,
-  };
-}
-
 export function renderInviteEmail(opts: { recipientName: string; projectTitle: string; inviteUrl: string }): EmailMessage {
   return {
     to: '',

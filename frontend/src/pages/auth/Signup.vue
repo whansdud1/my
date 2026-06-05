@@ -29,8 +29,10 @@ async function onSubmit() {
       name: name.value,
       consents: ['TOS', 'PRIVACY', 'COLLAB_METADATA'],
     });
-    notify.success('가입 메일을 발송했습니다. 인증을 완료해주세요.');
-    router.push({ name: 'verify', query: { email: email.value } });
+    // 이메일 인증 절차 제거 — 가입 즉시 자동 로그인 후 프로젝트 화면으로 이동.
+    await auth.login(email.value, password.value);
+    notify.success('가입이 완료되었습니다.');
+    router.push({ name: 'projects' });
   } catch (e) {
     notify.error((e as { detail?: string; title?: string }).detail ?? '가입에 실패했습니다.');
   } finally {
@@ -42,7 +44,7 @@ async function onSubmit() {
 <template>
   <section class="auth-form">
     <h1>회원가입</h1>
-    <p class="hint">네이버·지메일·다음 등 사용 중인 이메일로 가입할 수 있습니다. 인증 메일이 발송됩니다.</p>
+    <p class="hint">네이버·지메일·다음 등 사용 중인 이메일로 가입할 수 있습니다. 가입 즉시 이용할 수 있습니다.</p>
     <form @submit.prevent="onSubmit" class="card">
       <label>
         <span>이름</span>

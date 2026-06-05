@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { RouterLink } from 'vue-router';
+import { RouterLink, useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { useNotificationsStore } from '../stores/notifications';
 import { computed } from 'vue';
@@ -7,7 +7,14 @@ import NotificationBell from '../components/NotificationBell.vue';
 
 const auth = useAuthStore();
 const notify = useNotificationsStore();
+const router = useRouter();
 const isAuthed = computed(() => !!auth.accessToken);
+
+async function onLogout() {
+  await auth.logout();
+  // 로그아웃 후 랜딩(회원가입/로그인) 화면으로 이동.
+  router.push({ name: 'home' });
+}
 </script>
 
 <template>
@@ -22,7 +29,7 @@ const isAuthed = computed(() => !!auth.accessToken);
         <RouterLink v-if="isAuthed" to="/profile">프로필</RouterLink>
         <NotificationBell v-if="isAuthed" />
         <RouterLink v-if="!isAuthed" to="/login">로그인</RouterLink>
-        <button v-else class="nav-logout" @click="auth.logout()">로그아웃</button>
+        <button v-else class="nav-logout" @click="onLogout()">로그아웃</button>
       </nav>
     </header>
 
