@@ -34,7 +34,39 @@ api.interceptors.request.use((cfg: InternalAxiosRequestConfig) => {
   return cfg;
 });
 
-// --- response interceptor: envelope 언래핑 + RFC 7807 에러 → ApiError
+// 인증 관련 엔드포인트는 401 자동 갱신 대상에서 제외(무한 루프 방지)
+function isAuthEndpoint(url?: string): boolean {
+  if (!url) return false;
+  return (
+    url.includes('/auth/refresh') ||
+    url.includes('/auth/login') ||
+    url.includes('/auth/signup') ||
+    url.includes('/auth/logout')
+  );
+}
+
+// 동시 401 발생 시 refresh 를 한 번만 수행하기 위한 공유 프로미스
+let refreshPromise: Promise<string> | null = null;
+
+async function refreshAccessToken(): Promise<string> {
+  if (!refreshPromise) {
+    // 인터셉터 재귀를 피하기 위해 기본 axios 로 호출(쿠키의 refresh 토큰 사용)
+    refreshPromise = axios
+      .post(`${BASE}/auth/refresh`, {}, { withCredentials: true })
+      .then((res) => {
+        const token = res.data?.data?.accessToken as string | undefined;
+        if (!token) throw new Error('no access token in refresh response');
+        writeAccessToken(token);
+        return token;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
+// --- response interceptor: envelope 언래핑 + 401 자동 토큰 갱신 + RFC 7807 에러 → ApiError
 api.interceptors.response.use(
   (res) => {
     const body = res.data;
@@ -44,8 +76,28 @@ api.interceptors.response.use(
     }
     return res;
   },
-  (err: AxiosError) => {
+  async (err: AxiosError) => {
     const status = err.response?.status ?? 0;
+    const original = err.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
+
+    // 액세스 토큰 만료(401) → refresh 로 재발급 후 1회 재시도
+    if (status === 401 && original && !original._retry && !isAuthEndpoint(original.url)) {
+      original._retry = true;
+      try {
+        const token = await refreshAccessToken();
+        if (original.headers) original.headers.Authorization = `Bearer ${token}`;
+        return api(original);
+      } catch {
+        // refresh 실패(세션 만료) → 토큰 정리 후 로그인으로
+        writeAccessToken(null);
+        sessionStorage.removeItem('auth');
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+          const redirect = encodeURIComponent(window.location.pathname + window.location.search);
+          window.location.assign(`/login?redirect=${redirect}`);
+        }
+      }
+    }
+
     const body = err.response?.data as
       | { code?: string; title?: string; detail?: string; details?: Record<string, unknown>; instance?: string }
       | undefined;
