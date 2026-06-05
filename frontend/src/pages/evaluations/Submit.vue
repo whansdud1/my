@@ -56,7 +56,7 @@ async function submit() {
 </script>
 
 <template>
-  <section class="eval-submit">
+  <section class="page eval-submit">
     <h1>동료 평가</h1>
     <p class="hint">
       평가는 익명 처리되며, 본인 평가는 불가합니다. 4개 항목(1~5점) + 자유 코멘트로 구성됩니다.

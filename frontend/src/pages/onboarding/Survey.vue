@@ -39,7 +39,7 @@ async function submit() {
 </script>
 
 <template>
-  <section class="survey">
+  <section class="page survey">
     <h1>협업 성향 설문</h1>
     <p class="hint">5점 척도: 1 (매우 아니다) – 3 (보통) – 5 (매우 그렇다)</p>
     <form @submit.prevent="submit" class="card">
