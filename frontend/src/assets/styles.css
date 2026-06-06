@@ -77,6 +77,8 @@
   --c-border: var(--c-hairline);
   --c-accent: var(--c-primary);
   --c-accent-soft: rgba(0, 102, 204, 0.1);
+  --c-bg-subtle: var(--c-canvas-parchment);
+  --c-primary-subtle: var(--c-accent-soft);
   --radius: var(--r-md);
 }
 
