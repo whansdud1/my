@@ -40,6 +40,7 @@ const canDelete = computed(() => isOwner.value && proj.value?.status === 'RECRUI
 // 팀 채팅: ACCEPTED 멤버(=팀장 포함)만 참여 가능
 const canChat = computed(() => isOwner.value || myState.value === 'ACCEPTED');
 const activeTab = ref<'overview' | 'chat'>('overview');
+const chatUnread = ref(0);
 
 // 지원 가능 조건: 모집 중(미종료) + 팀장 아님 + (미지원 또는 과거 탈퇴/거절) + 남은 역할 존재
 const canApply = computed(
@@ -169,11 +170,18 @@ async function deleteProject() {
         @click="activeTab = 'chat'"
       >
         팀 채팅
+        <span v-if="chatUnread > 0" class="tab-badge">{{ chatUnread > 99 ? '99+' : chatUnread }}</span>
       </button>
     </nav>
 
-    <!-- 팀 채팅 패널 -->
-    <ProjectChat v-if="canChat && activeTab === 'chat'" :project-id="id" />
+    <!-- 팀 채팅 패널 — 계속 마운트해 두어(숨김) 다른 탭에서도 안읽음을 집계 -->
+    <ProjectChat
+      v-if="canChat"
+      v-show="activeTab === 'chat'"
+      :project-id="id"
+      :active="activeTab === 'chat'"
+      @update:unread="chatUnread = $event"
+    />
 
     <!-- 개요 -->
     <div v-show="activeTab === 'overview'">
@@ -377,6 +385,20 @@ async function deleteProject() {
 .tabs button.active {
   color: var(--c-primary, #0066cc);
   border-bottom-color: var(--c-primary, #0066cc);
+}
+.tab-badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 5px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: var(--c-danger, #b00020);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  vertical-align: middle;
 }
 .tabs button:hover {
   color: var(--c-ink, var(--c-fg));

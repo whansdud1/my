@@ -37,6 +37,9 @@ function stateLabel(s: MyProject['myState']) {
   return s === 'APPLIED' ? '지원 대기중' : s === 'ACCEPTED' ? '참여중' : '초대됨';
 }
 
+// 프로젝트별 안읽은 채팅 수
+const chatUnread = ref<Record<string, number>>({});
+
 onMounted(async () => {
   try {
     const { data } = await api.get<Profile>('/users/me');
@@ -48,6 +51,14 @@ onMounted(async () => {
     myProjects.value = await projects.fetchMine();
   } catch {
     myProjects.value = [];
+  }
+  try {
+    const { data } = await api.get<{ total: number; byProject: Record<string, number> }>(
+      '/projects/chat-unread',
+    );
+    chatUnread.value = data.byProject ?? {};
+  } catch {
+    chatUnread.value = {};
   }
 });
 
@@ -140,7 +151,12 @@ function toggleRole(r: string) {
       <h2>내 프로젝트</h2>
       <ul v-if="activeProjects.length" class="mp-list">
         <li v-for="p in activeProjects" :key="p.id">
-          <RouterLink :to="`/projects/${p.id}`" class="mp-title">{{ p.title }}</RouterLink>
+          <RouterLink :to="`/projects/${p.id}`" class="mp-title">
+            {{ p.title }}
+            <span v-if="chatUnread[p.id]" class="mp-unread" title="안 읽은 메시지">
+              💬 {{ chatUnread[p.id] > 99 ? '99+' : chatUnread[p.id] }}
+            </span>
+          </RouterLink>
           <div class="mp-meta">
             <span class="mp-role">{{ p.myRole }}</span>
             <span class="mp-state" :class="p.myState.toLowerCase()">{{ stateLabel(p.myState) }}</span>
@@ -218,6 +234,17 @@ function toggleRole(r: string) {
 /* 내 프로젝트 */
 .my-projects {
   margin-top: 20px;
+}
+.mp-unread {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--c-danger, #b00020);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  vertical-align: middle;
 }
 .my-projects h2 {
   margin: 0 0 12px 0;

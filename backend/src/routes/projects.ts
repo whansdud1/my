@@ -185,6 +185,16 @@ projectsRouter.get('/projects/mine', requireAuth, async (req: AuthedRequest, res
   }
 });
 
+// --- GET /projects/chat-unread — 내 모든 프로젝트 안읽음 합계(':id'보다 먼저 등록) ---
+projectsRouter.get('/projects/chat-unread', requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const summary = await Chat.unreadSummary(req.user!.id);
+    res.json(ok(summary));
+  } catch (e) {
+    next(e);
+  }
+});
+
 // --- GET /projects/:id ---
 projectsRouter.get('/projects/:id', requireAuth, async (req: AuthedRequest, res, next) => {
   try {
@@ -537,6 +547,36 @@ projectsRouter.post(
       const projectId = Number(req.params.id);
       const dto = await Chat.postMessage(projectId, req.user!.id, req.body.body);
       res.status(201).json(ok(dto));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// --- 팀 채팅: GET /projects/:id/read-state — 멤버별 읽음 커서 + 내 안읽음 ---
+projectsRouter.get(
+  '/projects/:id/read-state',
+  requireAuth,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const state = await Chat.getReadState(Number(req.params.id), req.user!.id);
+      res.json(ok(state));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// --- 팀 채팅: POST /projects/:id/messages/read — 읽음 커서 전진(소켓 미연결 폴백) ---
+const readSchema = z.object({ messageId: z.coerce.number().int().positive() });
+projectsRouter.post(
+  '/projects/:id/messages/read',
+  requireAuth,
+  validate({ body: readSchema }),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const result = await Chat.markRead(Number(req.params.id), req.user!.id, req.body.messageId);
+      res.json(ok(result));
     } catch (e) {
       next(e);
     }

@@ -1,6 +1,7 @@
 import { Errors } from '../../lib/envelope.js';
 import * as Members from '../../repositories/projectMembers.js';
 import * as Messages from '../../repositories/projectMessages.js';
+import * as Reads from '../../repositories/messageReads.js';
 import { emitToProject } from '../../realtime/io.js';
 
 // 팀 채팅 도메인 로직 — socket 핸들러와 REST 라우트가 공유한다.
@@ -67,4 +68,52 @@ export async function listMessages(
   await assertMember(projectId, userId);
   const rows = await Messages.listByProject(projectId, opts);
   return rows.map(toDto);
+}
+
+export interface ReadStateDto {
+  lastReads: Array<{ userId: string; lastReadId: number }>;
+  memberCount: number; // ACCEPTED 멤버 총원(읽음 표시의 "모두 읽음" 판정용)
+  myUnread: number;
+}
+
+// 읽음 처리 — 커서 전진 후 같은 room 에 read 이벤트 브로드캐스트(다른 멤버의 읽음 표시 갱신).
+export async function markRead(
+  projectId: number,
+  userId: number,
+  messageId: number,
+): Promise<{ lastReadId: number }> {
+  if (!Number.isFinite(messageId) || messageId <= 0) throw Errors.Validation('잘못된 messageId');
+  await assertMember(projectId, userId);
+  const lastReadId = await Reads.markRead(projectId, userId, messageId);
+  emitToProject(projectId, 'read', { userId: String(userId), lastReadId });
+  return { lastReadId };
+}
+
+// 채팅 초기 렌더용 읽음 상태(멤버별 커서 + 총원 + 내 안읽음).
+export async function getReadState(projectId: number, userId: number): Promise<ReadStateDto> {
+  await assertMember(projectId, userId);
+  const [lastReads, memberCount, myUnread] = await Promise.all([
+    Reads.lastReads(projectId),
+    Members.countAcceptedByProject(projectId),
+    Reads.unreadCount(projectId, userId),
+  ]);
+  return {
+    lastReads: lastReads.map((r) => ({ userId: String(r.userId), lastReadId: r.lastReadId })),
+    memberCount,
+    myUnread,
+  };
+}
+
+// 프로필/네비 배지용 — 내 모든 프로젝트의 안읽음 합계 + 프로젝트별.
+export async function unreadSummary(
+  userId: number,
+): Promise<{ total: number; byProject: Record<string, number> }> {
+  const rows = await Reads.unreadByUser(userId);
+  const byProject: Record<string, number> = {};
+  let total = 0;
+  for (const r of rows) {
+    if (r.unread > 0) byProject[String(r.projectId)] = r.unread;
+    total += r.unread;
+  }
+  return { total, byProject };
 }

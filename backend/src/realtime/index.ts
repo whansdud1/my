@@ -92,6 +92,15 @@ export function initRealtime(httpServer: HttpServer): Server {
       },
     );
 
+    // 읽음 처리 — 커서 전진 + room 에 read 브로드캐스트(다른 멤버 읽음표시 갱신).
+    socket.on('read', async (payload: { projectId?: unknown; messageId?: unknown }) => {
+      try {
+        await Chat.markRead(Number(payload?.projectId), user.id, Number(payload?.messageId));
+      } catch {
+        /* 비멤버/유효하지 않은 id — 무시 */
+      }
+    });
+
     // 타이핑 표시 — 본인 제외 같은 room 에만 중계(영속 없음).
     socket.on('typing', (payload: { projectId?: unknown; typing?: unknown }) => {
       const room = projectRoom(Number(payload?.projectId));

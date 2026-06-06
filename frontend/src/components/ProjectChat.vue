@@ -6,7 +6,10 @@ import { getSocket } from '../services/socket';
 import { useAuthStore } from '../stores/auth';
 import { useNotificationsStore } from '../stores/notifications';
 
-const props = defineProps<{ projectId: string }>();
+const props = withDefaults(defineProps<{ projectId: string; active?: boolean }>(), {
+  active: true,
+});
+const emit = defineEmits<{ (e: 'update:unread', count: number): void }>();
 
 interface ChatMessage {
   id: string;
@@ -35,6 +38,23 @@ const connected = ref(false);
 const atBottom = ref(true);
 const unseenNew = ref(0);
 const typingNames = ref<string[]>([]);
+
+// 읽음 상태: 멤버별 마지막 읽은 id, 총원, 내 읽음 커서
+const reads = ref<Record<string, number>>({});
+const memberCount = ref(1);
+const myLastRead = ref(0);
+let lastReadSent = 0;
+const otherCount = computed(() => Math.max(memberCount.value - 1, 0));
+
+// 안읽음 = 로드된 메시지 중 내 커서보다 뒤 + 내가 안 쓴 것
+const unread = computed(() =>
+  messages.value.reduce(
+    (n, m) =>
+      !m.pending && m.userId !== myId.value && Number(m.id) > myLastRead.value ? n + 1 : n,
+    0,
+  ),
+);
+watch(unread, (n) => emit('update:unread', n), { immediate: true });
 
 const listEl = ref<HTMLElement | null>(null);
 const inputEl = ref<HTMLTextAreaElement | null>(null);
@@ -67,6 +87,61 @@ function pushMessage(m: ChatMessage, toEnd = true) {
   if (!m.pending) seen.add(m.id);
   if (toEnd) messages.value.push(m);
   else messages.value.unshift(m);
+}
+
+// 가장 최신 확정 메시지 id
+function latestRealId(): number {
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i];
+    if (!m.pending && !m.failed) return Number(m.id);
+  }
+  return 0;
+}
+
+// 내 읽음 커서를 id 까지 전진 + 서버에 통지(소켓 우선, 폴백 REST). 중복 통지 방지.
+function markReadUpTo(id: number) {
+  if (!Number.isFinite(id) || id <= myLastRead.value) return;
+  myLastRead.value = id;
+  reads.value[myId.value] = id; // 내 읽음표시도 즉시 반영
+  if (id > lastReadSent) {
+    lastReadSent = id;
+    if (socket?.connected) socket.emit('read', { projectId: props.projectId, messageId: id });
+    else void api.post(`/projects/${props.projectId}/messages/read`, { messageId: id }).catch(() => {});
+  }
+}
+
+// 채팅이 보이고 맨 아래일 때만 최신까지 읽음 처리
+function maybeMarkRead() {
+  if (props.active && atBottom.value) markReadUpTo(latestRealId());
+}
+
+// 특정 메시지를 읽은 다른 멤버 수
+function readersOf(m: ChatMessage): number {
+  const mid = Number(m.id);
+  let n = 0;
+  for (const uid in reads.value) {
+    if (uid === myId.value) continue;
+    if (reads.value[uid] >= mid) n++;
+  }
+  return n;
+}
+
+async function loadReadState() {
+  try {
+    const { data } = await api.get<{
+      lastReads: Array<{ userId: string; lastReadId: number }>;
+      memberCount: number;
+      myUnread: number;
+    }>(`/projects/${props.projectId}/read-state`);
+    const map: Record<string, number> = {};
+    for (const r of data.lastReads) map[r.userId] = r.lastReadId;
+    reads.value = map;
+    memberCount.value = data.memberCount;
+    myLastRead.value = map[myId.value] ?? 0;
+    lastReadSent = myLastRead.value;
+  } catch {
+    /* 읽음 상태 실패는 치명적이지 않음 */
+  }
 }
 // 서버 확정본으로 낙관적 메시지를 교체(정합). clientId 매칭 없으면 신규로 추가.
 function reconcile(real: ChatMessage) {
@@ -103,6 +178,7 @@ async function scrollToBottom(smooth = false) {
   if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
   atBottom.value = true;
   unseenNew.value = 0;
+  maybeMarkRead();
 }
 function isNearBottom(): boolean {
   const el = listEl.value;
@@ -114,7 +190,10 @@ function onScroll() {
   if (!el) return;
   if (el.scrollTop < 40) void loadMore();
   atBottom.value = isNearBottom();
-  if (atBottom.value) unseenNew.value = 0;
+  if (atBottom.value) {
+    unseenNew.value = 0;
+    maybeMarkRead();
+  }
 }
 
 // --- 로드 ---
@@ -200,6 +279,12 @@ function connect() {
     clearTyping(m.userId);
     if (stick) await scrollToBottom(true);
     else unseenNew.value += 1;
+  });
+
+  // 다른 멤버의 읽음 커서 갱신 → 내 메시지의 "읽음" 표시가 실시간 반영
+  socket.on('read', (p: { userId: string; lastReadId: number }) => {
+    const cur = reads.value[p.userId] ?? 0;
+    if (p.lastReadId > cur) reads.value[p.userId] = p.lastReadId;
   });
 
   socket.on('typing', (p: { userId: string; typing: boolean }) => {
@@ -378,6 +463,7 @@ function avatarColor(userId: string): string {
 }
 
 onMounted(async () => {
+  await loadReadState(); // 내 커서를 먼저 세팅(이후 markRead 가 뒤로 가지 않도록)
   await loadInitial();
   connect();
 });
@@ -390,13 +476,25 @@ onBeforeUnmount(() => {
     socket.off('connect');
     socket.off('disconnect');
     socket.off('message:new');
+    socket.off('read');
     socket.off('typing');
   }
 });
+// 채팅 탭이 보이게 되면 맨 아래로 + 읽음 처리(숨겨진 동안 스크롤이 안 됐을 수 있음)
+watch(
+  () => props.active,
+  (now) => {
+    if (!now) return;
+    if (atBottom.value) void scrollToBottom();
+    else maybeMarkRead();
+  },
+);
 watch(
   () => props.projectId,
   async () => {
     joinedOnce = false;
+    lastReadSent = 0;
+    await loadReadState();
     await loadInitial();
     socket?.emit('room:join', props.projectId);
   },
@@ -454,7 +552,17 @@ watch(
                 <button v-else-if="m.failed" type="button" class="retry" @click="retry(m)">
                   ⚠ 재전송
                 </button>
-                <span v-else-if="showTime(i)" class="time">{{ fmtTime(m.createdAt) }}</span>
+                <span v-else class="meta">
+                  <!-- 내 메시지: 읽음 표시 -->
+                  <span
+                    v-if="m.userId === myId && otherCount > 0 && readersOf(m) > 0"
+                    class="rcpt"
+                    :class="{ all: readersOf(m) >= otherCount }"
+                  >
+                    {{ readersOf(m) >= otherCount ? '모두 읽음' : `읽음 ${readersOf(m)}` }}
+                  </span>
+                  <span v-if="showTime(i)" class="time">{{ fmtTime(m.createdAt) }}</span>
+                </span>
               </div>
             </div>
           </div>
@@ -657,14 +765,34 @@ watch(
   border-color: var(--c-danger, #b00020);
   background: color-mix(in srgb, var(--c-danger, #b00020) 8%, var(--c-primary, #0066cc));
 }
+.meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  flex-shrink: 0;
+  margin-bottom: 2px;
+}
 .time {
   flex-shrink: 0;
   font-size: 0.66rem;
   color: var(--c-ink-muted-48, var(--c-fg-muted));
   margin-bottom: 2px;
 }
+.meta .time {
+  margin-bottom: 0;
+}
 .time.st {
   font-style: italic;
+}
+.rcpt {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--c-primary, #0066cc);
+  white-space: nowrap;
+}
+.rcpt.all {
+  color: var(--c-success, #34a853);
 }
 .retry {
   flex-shrink: 0;
