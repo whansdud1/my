@@ -1,3 +1,4 @@
+import { createServer } from 'node:http';
 import { createApp } from './app.js';
 import { config } from './config.js';
 import { logger } from './lib/logger.js';
@@ -5,8 +6,13 @@ import { closePool } from './db/connection.js';
 import { registerNotificationHandlers } from './services/notification/index.js';
 import { startNotificationWorker, stopNotificationWorker } from './jobs/notificationWorker.js';
 import { startScheduleReminderWorker, stopScheduleReminderWorker } from './jobs/scheduleReminderWorker.js';
+import { initRealtime } from './realtime/index.js';
 
 const app = createApp();
+const httpServer = createServer(app);
+
+// 팀 채팅 — socket.io 를 같은 HTTP 서버에 부착(/api/socket.io)
+initRealtime(httpServer);
 
 // 002-notification-system — 이벤트 구독 등록 + outbox 워커 기동
 registerNotificationHandlers();
@@ -14,7 +20,7 @@ startNotificationWorker();
 // 003-schedule-coordination — 리마인더 워커 기동
 startScheduleReminderWorker();
 
-const server = app.listen(config.port, () => {
+const server = httpServer.listen(config.port, () => {
   logger.info(
     { port: config.port, env: config.env, publicBaseUrl: config.publicBaseUrl },
     `UniTeam backend listening on :${config.port}`,

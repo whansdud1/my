@@ -4,6 +4,7 @@ import { useRoute, useRouter, RouterLink } from 'vue-router';
 import { api } from '../../services/api';
 import { useProjectStore, type Applicant } from '../../stores/projects';
 import { useNotificationsStore } from '../../stores/notifications';
+import ProjectChat from '../../components/ProjectChat.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -35,6 +36,10 @@ const openRoles = computed(() => roles.value.filter((r) => r.remaining > 0));
 const recruitClosed = computed(() => !!proj.value?.recruitClosed);
 // 삭제 가능: 팀장이며 아직 모집 중(RECRUIT)일 때만
 const canDelete = computed(() => isOwner.value && proj.value?.status === 'RECRUIT');
+
+// 팀 채팅: ACCEPTED 멤버(=팀장 포함)만 참여 가능
+const canChat = computed(() => isOwner.value || myState.value === 'ACCEPTED');
+const activeTab = ref<'overview' | 'chat'>('overview');
 
 // 지원 가능 조건: 모집 중(미종료) + 팀장 아님 + (미지원 또는 과거 탈퇴/거절) + 남은 역할 존재
 const canApply = computed(
@@ -148,6 +153,30 @@ async function deleteProject() {
     </header>
     <p class="desc">{{ proj.description }}</p>
 
+    <!-- 탭: 개요 / 팀 채팅 -->
+    <nav class="tabs">
+      <button
+        type="button"
+        :class="{ active: activeTab === 'overview' }"
+        @click="activeTab = 'overview'"
+      >
+        개요
+      </button>
+      <button
+        v-if="canChat"
+        type="button"
+        :class="{ active: activeTab === 'chat' }"
+        @click="activeTab = 'chat'"
+      >
+        팀 채팅
+      </button>
+    </nav>
+
+    <!-- 팀 채팅 패널 -->
+    <ProjectChat v-if="canChat && activeTab === 'chat'" :project-id="id" />
+
+    <!-- 개요 -->
+    <div v-show="activeTab === 'overview'">
     <!-- 역할 현황 -->
     <div class="card">
       <div class="roles-head">
@@ -255,6 +284,7 @@ async function deleteProject() {
         </ul>
       </div>
     </div>
+    </div>
   </section>
   <div v-else>불러오는 중…</div>
 </template>
@@ -325,6 +355,31 @@ async function deleteProject() {
   color: var(--c-ink-muted-80);
   font-size: 17px;
   margin-bottom: var(--s-md);
+}
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--c-border);
+  margin-bottom: var(--s-md);
+}
+.tabs button {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 14px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--c-ink-muted-48, var(--c-fg-muted));
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.tabs button.active {
+  color: var(--c-primary, #0066cc);
+  border-bottom-color: var(--c-primary, #0066cc);
+}
+.tabs button:hover {
+  color: var(--c-ink, var(--c-fg));
 }
 .card {
   margin-top: var(--s-md);

@@ -48,7 +48,7 @@ function isAuthEndpoint(url?: string): boolean {
 // 동시 401 발생 시 refresh 를 한 번만 수행하기 위한 공유 프로미스
 let refreshPromise: Promise<string> | null = null;
 
-async function refreshAccessToken(): Promise<string> {
+export async function refreshAccessToken(): Promise<string> {
   if (!refreshPromise) {
     // 인터셉터 재귀를 피하기 위해 기본 axios 로 호출(쿠키의 refresh 토큰 사용)
     refreshPromise = axios

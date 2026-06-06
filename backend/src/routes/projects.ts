@@ -7,6 +7,7 @@ import { ok, Errors } from '../lib/envelope.js';
 import * as Projects from '../repositories/projects.js';
 import * as Members from '../repositories/projectMembers.js';
 import * as Invites from '../services/projects/invites.js';
+import * as Chat from '../services/chat/index.js';
 import { recommend } from '../services/matching/index.js';
 import { audit } from '../services/audit.js';
 
@@ -485,6 +486,57 @@ projectsRouter.post(
         role: req.body.role ?? 'MEMBER',
       });
       res.status(201).json(ok({ memberId: String(result.memberId), userId: String(result.userId) }));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// --- 팀 채팅: GET /projects/:id/messages — 히스토리(시간 오름차순) ---
+// 실시간 수신은 socket.io(message:new) 가 담당하고, 이 엔드포인트는 초기 로드와
+// 위로 더 불러오기(before=가장 오래된 메시지 id) 페이지네이션에 사용한다.
+const messagesQuerySchema = z.object({
+  before: z.coerce.number().int().positive().optional(),
+  after: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+projectsRouter.get(
+  '/projects/:id/messages',
+  requireAuth,
+  validate({ query: messagesQuerySchema }),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const projectId = Number(req.params.id);
+      const { before, after, limit } = req.query as {
+        before?: number;
+        after?: number;
+        limit?: number;
+      };
+      const items = await Chat.listMessages(projectId, req.user!.id, {
+        beforeId: before,
+        afterId: after,
+        limit,
+      });
+      res.json(ok(items));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// --- 팀 채팅: POST /projects/:id/messages — 메시지 전송(소켓 미연결 폴백) ---
+// 정상 경로는 소켓 message:send 지만, 웹소켓 실패 시에도 전송되도록 REST 도 제공.
+// 저장 후 동일 room 에 message:new 브로드캐스트(Chat.postMessage 내부).
+const sendMessageSchema = z.object({ body: z.string().min(1).max(2000) });
+projectsRouter.post(
+  '/projects/:id/messages',
+  requireAuth,
+  validate({ body: sendMessageSchema }),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const projectId = Number(req.params.id);
+      const dto = await Chat.postMessage(projectId, req.user!.id, req.body.body);
+      res.status(201).json(ok(dto));
     } catch (e) {
       next(e);
     }
