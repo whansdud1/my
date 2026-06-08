@@ -7,7 +7,6 @@ const routes: RouteRecordRaw[] = [
   // Auth (US1)
   { path: '/signup', name: 'signup', component: () => import('../pages/auth/Signup.vue') },
   { path: '/login', name: 'login', component: () => import('../pages/auth/Login.vue') },
-  { path: '/verify', name: 'verify', component: () => import('../pages/auth/Verify.vue') },
 
   // Profile (US1)
   {
@@ -92,12 +91,19 @@ export const router = createRouter({
   routes,
 });
 
+// 로그인한 사용자에게는 랜딩(홈)·로그인·회원가입 화면을 노출하지 않는다.
+const GUEST_ONLY = new Set(['home', 'login', 'signup']);
+
 router.beforeEach((to) => {
-  if (to.meta.requiresAuth) {
-    const auth = useAuthStore();
-    if (!auth.accessToken) {
-      return { name: 'login', query: { redirect: to.fullPath } };
-    }
+  const auth = useAuthStore();
+
+  if (auth.accessToken && GUEST_ONLY.has(to.name as string)) {
+    return { name: 'projects' };
   }
+
+  if (to.meta.requiresAuth && !auth.accessToken) {
+    return { name: 'login', query: { redirect: to.fullPath } };
+  }
+
   return true;
 });

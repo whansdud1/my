@@ -45,7 +45,7 @@ async function invite(c: Candidate) {
 </script>
 
 <template>
-  <section class="rec">
+  <section class="page rec">
     <h1>매칭 후보</h1>
     <p class="hint">적합도 점수 기준 상위 10명. 점수 막대에 마우스를 올리면 세부 가중치를 볼 수 있습니다.</p>
 

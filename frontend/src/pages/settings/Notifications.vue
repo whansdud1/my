@@ -53,7 +53,7 @@ async function save() {
 </script>
 
 <template>
-  <section>
+  <section class="page">
     <h1>알림 설정</h1>
     <p class="hint">알림 종류별로 받을 채널을 선택하세요. 보안 알림은 항상 수신됩니다.</p>
 

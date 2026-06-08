@@ -25,6 +25,8 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:9538',
         changeOrigin: false,
+        // 팀 채팅 socket.io(/api/socket.io) WebSocket 업그레이드 프록시
+        ws: true,
       },
     },
   },

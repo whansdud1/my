@@ -52,6 +52,13 @@ export const config = {
       .filter(Boolean),
   },
 
+  // 채팅 첨부(파일·사진) 저장 — 로컬 디스크. 운영에선 UPLOAD_DIR 을 영속 볼륨으로 마운트.
+  uploads: {
+    dir: process.env.UPLOAD_DIR ?? 'uploads',
+    maxBytes: int('UPLOAD_MAX_BYTES', 20 * 1024 * 1024), // 파일당 20MB
+    maxFiles: int('UPLOAD_MAX_FILES', 10), // 한 번에 최대 10개
+  },
+
   smtp: {
     host: process.env.SMTP_HOST ?? 'mailhog',
     port: int('SMTP_PORT', 1025),

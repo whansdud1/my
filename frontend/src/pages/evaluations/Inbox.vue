@@ -25,7 +25,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section>
+  <section class="page">
     <h1>내 평가</h1>
     <p class="hint">종료된 프로젝트에 대한 동료 평가는 14일 이내 제출해야 합니다.</p>
 

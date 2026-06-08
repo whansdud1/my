@@ -67,7 +67,7 @@ function attendCount(rsvps: { response: string }[]): number {
 </script>
 
 <template>
-  <section>
+  <section class="page">
     <h1>프로젝트 일정</h1>
 
     <label class="cal-toggle">

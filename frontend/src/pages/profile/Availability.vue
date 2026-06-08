@@ -72,7 +72,7 @@ async function save() {
 </script>
 
 <template>
-  <section class="avail">
+  <section class="page avail">
     <h1>가용 시간 편집</h1>
     <p class="hint">셀을 클릭해 가능 시간을 선택하세요. (드래그 미지원, 클릭 토글)</p>
     <div class="card">

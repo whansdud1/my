@@ -85,10 +85,11 @@ usersRouter.delete('/users/me', requireAuth, async (req: AuthedRequest, res, nex
 
 // --- PUT /users/me/availability ---
 const availSchema = z.object({
+  // 프론트(GET 응답과 동일)는 dayOfWeek 로 전송한다.
   slots: z
     .array(
       z.object({
-        weekday: z.number().int().min(0).max(6),
+        dayOfWeek: z.number().int().min(0).max(6),
         startHour: z.number().int().min(0).max(23),
         endHour: z.number().int().min(1).max(24),
       }),
@@ -103,9 +104,9 @@ usersRouter.put(
   validate({ body: availSchema }),
   async (req: AuthedRequest, res, next) => {
     try {
-      const slots = (req.body.slots as Array<{ weekday: number; startHour: number; endHour: number }>).map(
+      const slots = (req.body.slots as Array<{ dayOfWeek: number; startHour: number; endHour: number }>).map(
         (s) => ({
-          weekday: s.weekday,
+          weekday: s.dayOfWeek,
           startMin: s.startHour * 60,
           endMin: s.endHour * 60,
           prefNight: req.body.nightPreferred as boolean,

@@ -12,6 +12,7 @@ export interface ProjectRow {
   ends_at: Date | null;
   work_time_pref: 'DAY' | 'NIGHT' | 'ANY';
   status: 'RECRUIT' | 'RUNNING' | 'CLOSED' | 'ARCHIVED';
+  recruit_closed_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -76,6 +77,8 @@ export async function list(f: ListFilters): Promise<{ items: ProjectRow[]; total
     const like = `%${f.q}%`;
     params.push(like, like);
   }
+  // 모집 완료 후 1일이 지난 프로젝트는 목록에서 숨김
+  where.push('(recruit_closed_at IS NULL OR recruit_closed_at >= NOW(3) - INTERVAL 1 DAY)');
   const page = f.page && f.page > 0 ? f.page : 1;
   const pageSize = Math.min(Math.max(f.pageSize ?? 20, 1), 100);
   const offset = (page - 1) * pageSize;
@@ -95,6 +98,19 @@ export async function list(f: ListFilters): Promise<{ items: ProjectRow[]; total
 
 export async function updateStatus(id: number, status: ProjectRow['status']): Promise<void> {
   await getPool().query(`UPDATE projects SET status = ? WHERE id = ?`, [status, id]);
+}
+
+// 프로젝트 삭제 — project_members 등은 FK ON DELETE CASCADE 로 함께 삭제된다.
+export async function remove(id: number): Promise<void> {
+  await getPool().query(`DELETE FROM projects WHERE id = ?`, [id]);
+}
+
+// 모집 완료 처리 — 상태를 RUNNING 으로 바꾸고 완료 시각을 기록.
+export async function closeRecruit(id: number): Promise<void> {
+  await getPool().query(
+    `UPDATE projects SET status = 'RUNNING', recruit_closed_at = NOW(3) WHERE id = ?`,
+    [id],
+  );
 }
 
 export async function patch(id: number, fields: Partial<{ title: string; description: string | null; targetSize: number; startsAt: string | null; endsAt: string | null; workTimePref: ProjectRow['work_time_pref']; status: ProjectRow['status'] }>): Promise<void> {

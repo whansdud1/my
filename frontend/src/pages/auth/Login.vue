@@ -18,7 +18,7 @@ async function onSubmit() {
   try {
     await auth.login(email.value, password.value);
     notify.success('로그인되었습니다.');
-    const redirect = (route.query.redirect as string) || '/';
+    const redirect = (route.query.redirect as string) || '/projects';
     router.push(redirect);
   } catch (e) {
     notify.error((e as { detail?: string; title?: string }).detail ?? '로그인에 실패했습니다.');

@@ -67,6 +67,19 @@
     'SF Pro Display', system-ui, -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', Inter, sans-serif;
   --font-text:
     'SF Pro Text', system-ui, -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', Inter, sans-serif;
+
+  /* ---- Legacy aliases ----
+   * 내부 페이지 다수가 구(舊) 토큰명을 참조한다. Apple 토큰으로 매핑해
+   * 페이지 파일을 일일이 고치지 않고도 색·강조·테두리를 한 번에 되살린다. */
+  --c-fg: var(--c-ink);
+  --c-fg-muted: var(--c-ink-muted-48);
+  --c-bg: var(--c-canvas);
+  --c-border: var(--c-hairline);
+  --c-accent: var(--c-primary);
+  --c-accent-soft: rgba(0, 102, 204, 0.1);
+  --c-bg-subtle: var(--c-canvas-parchment);
+  --c-primary-subtle: var(--c-accent-soft);
+  --radius: var(--r-md);
 }
 
 /* ============================================================================
@@ -148,6 +161,14 @@ code {
   max-width: 1440px;
   margin: 0 auto;
   padding: 0 var(--s-lg);
+}
+
+/* 내부 콘텐츠 페이지 래퍼 — 최대폭·여백을 부여한다.
+ * 자체 풀블리드 배경/폭을 관리하는 페이지(Home 타일, 인증 카드)에는 붙이지 않는다. */
+.page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: var(--s-xl) var(--s-lg) var(--s-section);
 }
 
 .tile {
