@@ -92,10 +92,11 @@ export async function respond(memberId: number, userId: number, accept: boolean)
     if (member.state !== 'INVITED') throw Errors.Validation('이미 처리된 초대입니다');
 
     if (accept) {
-      const [[{ cnt }]] = (await conn.query(
+      const [countRows] = (await conn.query(
         `SELECT COUNT(*) AS cnt FROM project_members WHERE project_id = ? AND state = 'ACCEPTED'`,
         [member.pid],
       )) as unknown as [Array<{ cnt: number }>];
+      const cnt = countRows[0]?.cnt ?? 0;
       if (cnt + 1 > member.target_size) throw Errors.Conflict('정원이 가득 찼습니다');
 
       await conn.query(

@@ -71,7 +71,10 @@ authRouter.post(
 authRouter.post('/auth/refresh', async (req, res, next) => {
   try {
     const raw = (req.cookies as Record<string, string> | undefined)?.[REFRESH_COOKIE];
-    if (!raw) return res.status(401).json({ code: 'UNAUTHORIZED', title: 'no refresh cookie', status: 401 });
+    if (!raw) {
+      res.status(401).json({ code: 'UNAUTHORIZED', title: 'no refresh cookie', status: 401 });
+      return;
+    }
     const rotated = await rotateRefresh(raw);
     res.cookie(REFRESH_COOKIE, rotated.refreshToken, REFRESH_COOKIE_OPTS);
     res.json(
