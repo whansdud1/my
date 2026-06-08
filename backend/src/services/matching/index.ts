@@ -51,6 +51,72 @@ export async function recommend(projectId: number, limit = 10): Promise<Candidat
     return await projectCachedToDto(cached.slice(0, limit));
   }
 
+  const scored = await computeScored(projectId, project);
+  const top = scored.slice(0, limit);
+
+  // 캐시 저장 (비차단으로도 가능하지만 일관성 위해 awaiting)
+  await Matching.saveBatch(
+    projectId,
+    top.map((t) => ({ candidateId: t.row.id, score: t.total, breakdown: t.breakdown })),
+  );
+
+  return top.map(toDto);
+}
+
+export interface RoleGroup {
+  role: string;
+  candidates: CandidateOut[];
+}
+
+// 역할별 탭 — 프로젝트 모집 역할마다 별점(★) 높은 순 상위 perRole명을 그룹으로 반환.
+export async function recommendByRole(projectId: number, perRole = 10): Promise<RoleGroup[]> {
+  const project = await Projects.findById(projectId);
+  if (!project) throw Errors.NotFound('프로젝트가 없습니다');
+
+  const scored = await computeScored(projectId, project);
+  const roles = Array.from(new Set((project.required_roles ?? []).map((r) => r.role)));
+
+  const byRating = (a: Scored, b: Scored): number => {
+    const ra = a.row.stars ? Number(a.row.stars) : 0;
+    const rb = b.row.stars ? Number(b.row.stars) : 0;
+    if (rb !== ra) return rb - ra; // 별점 높은 순
+    return b.total - a.total; // 동점이면 적합도 높은 순
+  };
+
+  return roles.map((role) => ({
+    role,
+    candidates: scored
+      .filter((s) => (s.row.preferred_roles ?? []).includes(role))
+      .sort(byRating)
+      .slice(0, perRole)
+      .map(toDto),
+  }));
+}
+
+interface Scored {
+  row: UserCalcRow;
+  total: number;
+  breakdown: Record<string, number>;
+}
+
+function toDto(s: Scored): CandidateOut {
+  return {
+    userId: String(s.row.id),
+    name: s.row.name,
+    major: s.row.department,
+    grade: s.row.grade,
+    rating: s.row.stars ? Number(s.row.stars) : 0,
+    matchScore: s.total,
+    breakdown: s.breakdown,
+    preferredRoles: s.row.preferred_roles ?? [],
+  };
+}
+
+// 후보 풀 전체를 점수화하여 적합도 내림차순으로 반환 (recommend / recommendByRole 공용).
+async function computeScored(
+  projectId: number,
+  project: Projects.ProjectRow,
+): Promise<Scored[]> {
   const start = Date.now();
 
   // 현재 팀 (등록자 포함 ACCEPTED)
@@ -162,29 +228,13 @@ export async function recommend(projectId: number, limit = 10): Promise<Candidat
   }
 
   scored.sort((a, b) => b.total - a.total);
-  const top = scored.slice(0, limit);
-
-  // 캐시 저장 (비차단으로도 가능하지만 일관성 위해 awaiting)
-  await Matching.saveBatch(
-    projectId,
-    top.map((t) => ({ candidateId: t.row.id, score: t.total, breakdown: t.breakdown })),
-  );
 
   logger.info(
-    { projectId, candidates: pool.length, picked: top.length, elapsedMs: Date.now() - start },
-    'matching.recommend done',
+    { projectId, candidates: pool.length, picked: scored.length, elapsedMs: Date.now() - start },
+    'matching.computeScored done',
   );
 
-  return top.map((t) => ({
-    userId: String(t.row.id),
-    name: t.row.name,
-    major: t.row.department,
-    grade: t.row.grade,
-    rating: t.row.stars ? Number(t.row.stars) : 0,
-    matchScore: t.total,
-    breakdown: t.breakdown,
-    preferredRoles: t.row.preferred_roles ?? [],
-  }));
+  return scored;
 }
 
 async function projectCachedToDto(rows: Matching.RecCache[]): Promise<CandidateOut[]> {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { api } from '../../services/api';
 import { useNotificationsStore } from '../../stores/notifications';
@@ -22,18 +22,29 @@ interface Candidate {
   preferredRoles: string[];
 }
 
+interface RoleGroup {
+  role: string;
+  candidates: Candidate[];
+}
+
 const route = useRoute();
 const id = route.params.id as string;
-const list = ref<Candidate[]>([]);
+const groups = ref<RoleGroup[]>([]);
+const activeRole = ref<string>('');
 const loading = ref(true);
 const notify = useNotificationsStore();
 
+// 현재 선택된 역할 탭의 후보 (별점 높은 순 상위 10명)
+const activeCandidates = computed<Candidate[]>(
+  () => groups.value.find((g) => g.role === activeRole.value)?.candidates ?? [],
+);
+
 onMounted(async () => {
   try {
-    const { data } = await api.get<Candidate[]>(`/projects/${id}/recommendations`, {
-      params: { limit: 10 },
-    });
-    list.value = data;
+    const { data } = await api.get<RoleGroup[]>(`/projects/${id}/recommendations/by-role`);
+    groups.value = data;
+    // 후보가 있는 첫 역할을 기본 탭으로, 없으면 첫 역할
+    activeRole.value = (data.find((g) => g.candidates.length > 0) ?? data[0])?.role ?? '';
   } catch (e) {
     notify.error((e as { detail?: string }).detail ?? '추천을 불러올 수 없습니다.');
   } finally {
@@ -128,7 +139,8 @@ function closeProposal() {
       <div>
         <h1>매칭 후보</h1>
         <p class="hint">
-          적합도 점수 기준 상위 10명. 점수 막대에 마우스를 올리면 세부 가중치를 볼 수 있습니다.
+          역할별 탭 · 별점(★) 높은 순 상위 10명. 점수 막대에 마우스를 올리면 세부 가중치를 볼 수
+          있습니다.
         </p>
       </div>
       <button
@@ -144,54 +156,81 @@ function closeProposal() {
       계산 중…
     </div>
     <div
-      v-else-if="list.length === 0"
+      v-else-if="groups.length === 0"
       class="card empty"
     >
-      <p>현재 조건에 맞는 후보가 없습니다. 프로젝트 조건을 조정해보세요.</p>
+      <p>모집 역할이 없어 후보를 나눌 수 없습니다. 프로젝트의 모집 역할을 먼저 설정해보세요.</p>
     </div>
-    <div
-      v-else
-      class="grid"
-    >
-      <article
-        v-for="c in list"
-        :key="c.userId"
-        class="card cand"
+    <template v-else>
+      <!-- 역할별 탭 -->
+      <nav
+        class="tabs"
+        role="tablist"
       >
-        <header>
-          <h3>{{ c.name }}</h3>
-          <span class="score">{{ c.matchScore.toFixed(1) }}</span>
-        </header>
-        <p class="meta">
-          {{ c.major }} · {{ c.grade }}학년 · ★{{ c.rating.toFixed(1) }}
-        </p>
-        <div class="roles">
-          <span
-            v-for="r in c.preferredRoles"
-            :key="r"
-            class="chip"
-          >{{ r }}</span>
-        </div>
-        <div
-          class="bar"
-          :title="JSON.stringify(c.breakdown, null, 2)"
-        >
-          <span
-            v-for="(v, k) in c.breakdown"
-            :key="k"
-            :style="{ flex: v }"
-            :class="`seg seg-${k}`"
-            :aria-label="`${k} ${v}`"
-          />
-        </div>
         <button
-          class="btn primary"
-          @click="invite(c)"
+          v-for="g in groups"
+          :key="g.role"
+          class="tab"
+          :class="{ active: activeRole === g.role }"
+          role="tab"
+          :aria-selected="activeRole === g.role"
+          @click="activeRole = g.role"
         >
-          초대
+          {{ g.role }}
+          <span class="tab-count">{{ g.candidates.length }}</span>
         </button>
-      </article>
-    </div>
+      </nav>
+
+      <div
+        v-if="activeCandidates.length === 0"
+        class="card empty"
+      >
+        <p>이 역할에 맞는 후보가 아직 없습니다.</p>
+      </div>
+      <div
+        v-else
+        class="grid"
+      >
+        <article
+          v-for="c in activeCandidates"
+          :key="c.userId"
+          class="card cand"
+        >
+          <header>
+            <h3>{{ c.name }}</h3>
+            <span class="score">★{{ c.rating.toFixed(1) }}</span>
+          </header>
+          <p class="meta">
+            {{ c.major }} · {{ c.grade }}학년 · 적합도 {{ c.matchScore.toFixed(1) }}
+          </p>
+          <div class="roles">
+            <span
+              v-for="r in c.preferredRoles"
+              :key="r"
+              class="chip"
+            >{{ r }}</span>
+          </div>
+          <div
+            class="bar"
+            :title="JSON.stringify(c.breakdown, null, 2)"
+          >
+            <span
+              v-for="(v, k) in c.breakdown"
+              :key="k"
+              :style="{ flex: v }"
+              :class="`seg seg-${k}`"
+              :aria-label="`${k} ${v}`"
+            />
+          </div>
+          <button
+            class="btn primary"
+            @click="invite(c)"
+          >
+            초대
+          </button>
+        </article>
+      </div>
+    </template>
 
     <!-- 자동 팀 편성 제안 모달 -->
     <div
@@ -301,6 +340,45 @@ function closeProposal() {
 .hint {
   color: var(--c-fg-muted);
   font-size: 0.9rem;
+}
+
+/* 역할별 탭 */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--c-border, #e5e7eb);
+  margin-top: 16px;
+}
+.tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--c-fg-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: -1px;
+}
+.tab:hover {
+  color: var(--c-fg, #111);
+}
+.tab.active {
+  color: var(--c-accent);
+  border-bottom-color: var(--c-accent);
+}
+.tab-count {
+  background: var(--c-accent-soft);
+  color: var(--c-accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0 7px;
+  border-radius: 999px;
+  line-height: 1.5;
 }
 .grid {
   display: grid;

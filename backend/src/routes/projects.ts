@@ -11,7 +11,7 @@ import * as Members from '../repositories/projectMembers.js';
 import * as Attachments from '../repositories/messageAttachments.js';
 import * as Invites from '../services/projects/invites.js';
 import * as Chat from '../services/chat/index.js';
-import { recommend } from '../services/matching/index.js';
+import { recommend, recommendByRole } from '../services/matching/index.js';
 import { composeTeam } from '../services/matching/compose.js';
 import { audit } from '../services/audit.js';
 
@@ -751,6 +751,21 @@ projectsRouter.get(
       const limit = Number((req.query as { limit?: number }).limit ?? 10);
       const list = await recommend(id, limit);
       res.json(ok(list));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// --- GET /projects/:id/recommendations/by-role — 역할별 탭(별점 상위 10명) ---
+projectsRouter.get(
+  '/projects/:id/recommendations/by-role',
+  requireAuth,
+  async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      const groups = await recommendByRole(id, 10);
+      res.json(ok(groups));
     } catch (e) {
       next(e);
     }
