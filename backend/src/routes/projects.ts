@@ -185,7 +185,8 @@ projectsRouter.get('/projects/mine', requireAuth, async (req: AuthedRequest, res
           endDate: r.ends_at ? r.ends_at.toISOString().slice(0, 10) : null,
           myRole: r.role,
           myState: r.state, // APPLIED(대기) | ACCEPTED(참여) | INVITED(초대됨)
-          recruitClosed: r.status !== 'RECRUIT',
+          started: r.status !== 'RECRUIT', // 팀장이 '프로젝트 시작'을 누른 뒤
+          recruitClosed: r.status !== 'RECRUIT' || r.recruit_closed_at !== null,
           // 프로젝트 종료 = CLOSED/ARCHIVED 이거나 종료일이 지남
           finished:
             r.status === 'CLOSED' ||
@@ -264,6 +265,56 @@ projectsRouter.patch(
     }
   },
 );
+
+// --- POST /projects/:id/start — 팀장: 프로젝트 시작(RECRUIT→RUNNING) → 팀 채팅 오픈 ---
+projectsRouter.post('/projects/:id/start', requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) throw Errors.Validation('잘못된 id');
+    const p = await Projects.findById(id);
+    if (!p) throw Errors.NotFound();
+    assertOwner(p.owner_id, req.user!.id, req.user!.role);
+    if (p.status !== 'RECRUIT') {
+      throw Errors.Validation('모집 중인 프로젝트만 시작할 수 있습니다');
+    }
+    await Projects.start(id);
+    await audit({
+      actorId: req.user!.id,
+      action: 'PROJECT_START',
+      targetType: 'project',
+      targetId: id,
+    });
+    const after = await Projects.findById(id);
+    res.json(ok(projectDto(after!)));
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- POST /projects/:id/complete — 팀장: 프로젝트 완료(RUNNING→CLOSED) → 팀원 별점 평가 오픈 ---
+projectsRouter.post('/projects/:id/complete', requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) throw Errors.Validation('잘못된 id');
+    const p = await Projects.findById(id);
+    if (!p) throw Errors.NotFound();
+    assertOwner(p.owner_id, req.user!.id, req.user!.role);
+    if (p.status !== 'RUNNING') {
+      throw Errors.Validation('진행 중인 프로젝트만 완료할 수 있습니다');
+    }
+    await Projects.complete(id);
+    await audit({
+      actorId: req.user!.id,
+      action: 'PROJECT_COMPLETE',
+      targetType: 'project',
+      targetId: id,
+    });
+    const after = await Projects.findById(id);
+    res.json(ok(projectDto(after!)));
+  } catch (e) {
+    next(e);
+  }
+});
 
 // --- DELETE /projects/:id — 팀장이 모집 중(RECRUIT)인 본인 프로젝트 삭제 ---
 projectsRouter.delete('/projects/:id', requireAuth, async (req: AuthedRequest, res, next) => {

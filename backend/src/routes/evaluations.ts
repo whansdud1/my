@@ -5,6 +5,8 @@ import { requireAuth, type AuthedRequest } from '../middlewares/auth.js';
 import { ok, Errors } from '../lib/envelope.js';
 import { submitEvaluation } from '../services/evaluation/peer.js';
 import { recomputeRating } from '../services/evaluation/combine.js';
+import { submitStarRatings } from '../services/evaluation/stars.js';
+import * as PeerRatings from '../repositories/peerRatings.js';
 import { getPool } from '../db/connection.js';
 
 export const evaluationsRouter = Router();
@@ -120,6 +122,62 @@ evaluationsRouter.get('/evaluations/pending', requireAuth, async (req: AuthedReq
   }
 });
 
+// --- POST /projects/:id/ratings (팀원 별점 평가, 0.5 단위) ---
+const ratingsSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        rateeId: z.union([z.string(), z.number()]).transform((v) => Number(v)),
+        stars: z
+          .number()
+          .min(0.5)
+          .max(5)
+          .refine((n) => Number.isInteger(n * 2), '별점은 0.5 단위여야 합니다'),
+        comment: z.string().max(500).optional(),
+      }),
+    )
+    .min(1)
+    .max(20),
+});
+
+evaluationsRouter.post(
+  '/projects/:id/ratings',
+  requireAuth,
+  validate({ body: ratingsSchema }),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const projectId = Number(req.params.id);
+      const result = await submitStarRatings({
+        projectId,
+        raterId: req.user!.id,
+        items: req.body.items,
+      });
+      res.status(201).json(ok(result));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// --- GET /projects/:id/ratings/mine (내가 제출한 별점 — 폼 프리필) ---
+evaluationsRouter.get('/projects/:id/ratings/mine', requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const projectId = Number(req.params.id);
+    const rows = await PeerRatings.listByRater(projectId, req.user!.id);
+    res.json(
+      ok(
+        rows.map((r) => ({
+          rateeId: String(r.ratee_id),
+          stars: Number(r.stars),
+          comment: r.comment,
+        })),
+      ),
+    );
+  } catch (e) {
+    next(e);
+  }
+});
+
 // --- GET /projects/:id/teammates (평가 폼용) ---
 evaluationsRouter.get('/projects/:id/teammates', requireAuth, async (req: AuthedRequest, res, next) => {
   try {
@@ -132,6 +190,33 @@ evaluationsRouter.get('/projects/:id/teammates', requireAuth, async (req: Authed
       [projectId, req.user!.id],
     )) as unknown as [Array<{ user_id: number; role: string; name: string }>];
     res.json(ok(rows.map((r) => ({ userId: String(r.user_id), name: r.name, role: r.role }))));
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- GET /users/:id/reviews — 종합 별점 + 익명 후기(평가자 정보 제외) ---
+// 팀장이 지원자를 승인할지 판단할 때 해당 사용자의 평판을 본다.
+evaluationsRouter.get('/users/:id/reviews', requireAuth, async (req, res, next) => {
+  try {
+    const uid = Number(req.params.id);
+    if (!Number.isFinite(uid)) throw Errors.Validation();
+    const [[summary]] = (await getPool().query(
+      `SELECT stars, evaluation_count FROM ratings WHERE user_id = ?`,
+      [uid],
+    )) as unknown as [Array<{ stars: string; evaluation_count: number } | undefined>];
+    const reviews = await PeerRatings.listReviewsForRatee(uid, 50);
+    res.json(
+      ok({
+        stars: summary ? Number(summary.stars) : 0,
+        count: summary ? summary.evaluation_count : 0,
+        reviews: reviews.map((r) => ({
+          stars: Number(r.stars),
+          comment: r.comment,
+          ratedAt: r.updated_at.toISOString().slice(0, 10),
+        })),
+      }),
+    );
   } catch (e) {
     next(e);
   }

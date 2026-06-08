@@ -22,6 +22,7 @@ export interface MyProject {
   endDate: string | null;
   myRole: string;
   myState: 'INVITED' | 'ACCEPTED' | 'APPLIED';
+  started: boolean;
   recruitClosed: boolean;
   finished: boolean;
 }
@@ -100,6 +101,18 @@ export const useProjectStore = defineStore('projects', {
     // 팀장: 지원 수락/거절
     async decide(id: string, userId: string, action: 'ACCEPT' | 'REJECT') {
       const { data } = await api.post(`/projects/${id}/applicants/${userId}/decision`, { action });
+      return data;
+    },
+    // 팀장: 프로젝트 시작(RECRUIT→RUNNING) → 팀 채팅 오픈
+    async start(id: string) {
+      const { data } = await api.post<Project>(`/projects/${id}/start`);
+      if (this.current?.id === id) this.current = data;
+      return data;
+    },
+    // 팀장: 프로젝트 완료(RUNNING→CLOSED) → 팀원 별점 평가 오픈
+    async complete(id: string) {
+      const { data } = await api.post<Project>(`/projects/${id}/complete`);
+      if (this.current?.id === id) this.current = data;
       return data;
     },
     // 팀장: 모집 중 프로젝트 삭제

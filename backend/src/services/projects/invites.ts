@@ -103,9 +103,12 @@ export async function respond(memberId: number, userId: number, accept: boolean)
         `UPDATE project_members SET state = 'ACCEPTED', joined_at = NOW(3) WHERE id = ?`,
         [memberId],
       );
-      // 정원 달성 시 RUNNING 전환
+      // 정원 달성 시 모집 종료(상태는 RECRUIT 유지) — RUNNING 전환은 팀장이 '프로젝트 시작'을 눌러야 함
       if (cnt + 1 === member.target_size) {
-        await conn.query(`UPDATE projects SET status = 'RUNNING' WHERE id = ?`, [member.pid]);
+        await conn.query(
+          `UPDATE projects SET recruit_closed_at = COALESCE(recruit_closed_at, NOW(3)) WHERE id = ?`,
+          [member.pid],
+        );
       }
     } else {
       await conn.query(`UPDATE project_members SET state = 'REJECTED' WHERE id = ?`, [memberId]);

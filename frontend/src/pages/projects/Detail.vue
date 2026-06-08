@@ -5,6 +5,7 @@ import { api } from '../../services/api';
 import { useProjectStore, type Applicant } from '../../stores/projects';
 import { useNotificationsStore } from '../../stores/notifications';
 import ProjectChat from '../../components/ProjectChat.vue';
+import StarRating from '../../components/StarRating.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -34,12 +35,24 @@ const myState = computed(() => proj.value?.myMembership?.state ?? null);
 const roles = computed(() => proj.value?.roles ?? []);
 const openRoles = computed(() => roles.value.filter((r) => r.remaining > 0));
 const recruitClosed = computed(() => !!proj.value?.recruitClosed);
+// 시작됨: 팀장이 '프로젝트 시작'을 눌러 RECRUIT 를 벗어난 상태
+const started = computed(() => !!proj.value && proj.value.status !== 'RECRUIT');
 // 삭제 가능: 팀장이며 아직 모집 중(RECRUIT)일 때만
 const canDelete = computed(() => isOwner.value && proj.value?.status === 'RECRUIT');
+// 프로젝트 시작 가능: 팀장이며 아직 시작 전(RECRUIT)일 때 — 팀장은 언제든 시작 가능
+const canStart = computed(() => isOwner.value && proj.value?.status === 'RECRUIT');
+// 완료됨(CLOSED/ARCHIVED)
+const completed = computed(
+  () => proj.value?.status === 'CLOSED' || proj.value?.status === 'ARCHIVED',
+);
+// 프로젝트 완료 가능: 팀장이며 진행 중(RUNNING)일 때
+const canComplete = computed(() => isOwner.value && proj.value?.status === 'RUNNING');
+// 팀원 평가 가능: 완료된 프로젝트 + ACCEPTED 멤버(=팀장 포함)
+const canEvaluate = computed(() => completed.value && (isOwner.value || myState.value === 'ACCEPTED'));
 
-// 팀 채팅: ACCEPTED 멤버(=팀장 포함)만 참여 가능
-const canChat = computed(() => isOwner.value || myState.value === 'ACCEPTED');
-const activeTab = ref<'overview' | 'chat'>('overview');
+// 팀 채팅: 프로젝트가 시작된 뒤 + ACCEPTED 멤버(=팀장 포함)만 참여 가능
+const canChat = computed(() => started.value && (isOwner.value || myState.value === 'ACCEPTED'));
+const activeTab = ref<'overview' | 'chat' | 'eval'>('overview');
 const chatUnread = ref(0);
 
 // 지원 가능 조건: 모집 중(미종료) + 팀장 아님 + (미지원 또는 과거 탈퇴/거절) + 남은 역할 존재
@@ -62,10 +75,42 @@ async function loadMembers() {
   }
 }
 
+// 지원자 평판(종합 별점 + 익명 후기) — 팀장이 승인 판단 시 참고
+interface UserReview {
+  stars: number;
+  comment: string;
+  ratedAt: string;
+}
+interface UserReputation {
+  stars: number;
+  count: number;
+  reviews: UserReview[];
+}
+const applicantRep = ref<Record<string, UserReputation>>({});
+const expandedApplicant = ref<string | null>(null);
+
+async function loadApplicantReputations() {
+  await Promise.all(
+    applicants.value.map(async (a) => {
+      try {
+        const { data } = await api.get<UserReputation>(`/users/${a.userId}/reviews`);
+        applicantRep.value[a.userId] = data;
+      } catch {
+        applicantRep.value[a.userId] = { stars: 0, count: 0, reviews: [] };
+      }
+    }),
+  );
+}
+
+function toggleReviews(uid: string) {
+  expandedApplicant.value = expandedApplicant.value === uid ? null : uid;
+}
+
 async function loadApplicants() {
   if (!isOwner.value) return;
   try {
     applicants.value = await store.fetchApplicants(id);
+    await loadApplicantReputations();
   } catch {
     applicants.value = [];
   }
@@ -73,7 +118,7 @@ async function loadApplicants() {
 
 async function reload() {
   await store.fetchOne(id);
-  await Promise.all([loadMembers(), loadApplicants()]);
+  await Promise.all([loadMembers(), loadApplicants(), loadEvaluation()]);
 }
 
 onMounted(reload);
@@ -123,6 +168,101 @@ async function sendInvite() {
   }
 }
 
+// --- 팀원 별점 평가 ---
+interface EvalRow {
+  userId: string;
+  name: string;
+  role: string;
+  stars: number;
+  comment: string;
+}
+const evalRows = ref<EvalRow[]>([]);
+const evalLoading = ref(false);
+const evalSubmitting = ref(false);
+
+async function loadEvaluation() {
+  if (!canEvaluate.value) {
+    evalRows.value = [];
+    return;
+  }
+  evalLoading.value = true;
+  try {
+    const [tmRes, mineRes] = await Promise.all([
+      api.get<Array<{ userId: string; name: string; role: string }>>(`/projects/${id}/teammates`),
+      api.get<Array<{ rateeId: string; stars: number; comment: string | null }>>(
+        `/projects/${id}/ratings/mine`,
+      ),
+    ]);
+    const mine = new Map(mineRes.data.map((m) => [m.rateeId, m]));
+    evalRows.value = tmRes.data.map((t) => ({
+      userId: t.userId,
+      name: t.name,
+      role: t.role,
+      stars: mine.get(t.userId)?.stars ?? 0,
+      comment: mine.get(t.userId)?.comment ?? '',
+    }));
+  } catch {
+    evalRows.value = [];
+  } finally {
+    evalLoading.value = false;
+  }
+}
+
+async function submitRatings() {
+  const items = evalRows.value
+    .filter((r) => r.stars > 0)
+    .map((r) => ({ rateeId: r.userId, stars: r.stars, comment: r.comment.trim() || undefined }));
+  if (items.length === 0) {
+    notify.warn('한 명 이상에게 별점을 매겨주세요.');
+    return;
+  }
+  evalSubmitting.value = true;
+  try {
+    await api.post(`/projects/${id}/ratings`, { items });
+    notify.success('팀원 평가를 저장했습니다. 감사합니다!');
+    await loadEvaluation();
+  } catch (e) {
+    notify.error((e as { detail?: string }).detail ?? '평가 저장에 실패했습니다.');
+  } finally {
+    evalSubmitting.value = false;
+  }
+}
+
+const completing = ref(false);
+async function completeProject() {
+  if (!window.confirm('프로젝트를 완료할까요? 완료하면 팀원들이 서로를 별점으로 평가할 수 있습니다.')) return;
+  completing.value = true;
+  try {
+    await store.complete(id);
+    notify.success('프로젝트를 완료했습니다. 팀원 평가를 시작할 수 있어요.');
+    activeTab.value = 'eval';
+    await reload();
+  } catch (e) {
+    notify.error((e as { detail?: string }).detail ?? '프로젝트 완료에 실패했습니다.');
+  } finally {
+    completing.value = false;
+  }
+}
+
+const starting = ref(false);
+async function startProject() {
+  const msg = recruitClosed.value
+    ? '프로젝트를 시작할까요? 시작하면 팀 채팅이 열리고 더 이상 모집할 수 없습니다.'
+    : '아직 모집이 끝나지 않았습니다. 지금 시작하면 추가 모집이 마감되고 팀 채팅이 열립니다. 시작할까요?';
+  if (!window.confirm(msg)) return;
+  starting.value = true;
+  try {
+    await store.start(id);
+    notify.success('프로젝트를 시작했습니다. 이제 팀 채팅을 사용할 수 있어요.');
+    activeTab.value = 'chat';
+    await reload();
+  } catch (e) {
+    notify.error((e as { detail?: string }).detail ?? '프로젝트 시작에 실패했습니다.');
+  } finally {
+    starting.value = false;
+  }
+}
+
 const deleting = ref(false);
 async function deleteProject() {
   if (!window.confirm('이 프로젝트를 삭제할까요? 되돌릴 수 없습니다.')) return;
@@ -144,9 +284,18 @@ async function deleteProject() {
     <header class="head">
       <h1>{{ proj.title }}</h1>
       <div class="head-right">
-        <span class="status" :class="{ closed: recruitClosed }">
-          {{ recruitClosed ? '팀원 모집 종료' : '팀원 모집 중' }}
+        <span
+          class="status"
+          :class="{ closed: completed || (recruitClosed && !started), running: started && !completed }"
+        >
+          {{ completed ? '완료' : started ? '진행 중' : recruitClosed ? '팀원 모집 종료' : '팀원 모집 중' }}
         </span>
+        <button v-if="canStart" class="btn primary small" :disabled="starting" @click="startProject">
+          {{ starting ? '시작 중…' : '⚡ 프로젝트 시작' }}
+        </button>
+        <button v-if="canComplete" class="btn primary small" :disabled="completing" @click="completeProject">
+          {{ completing ? '완료 중…' : '✓ 프로젝트 완료' }}
+        </button>
         <button v-if="canDelete" class="btn danger small" :disabled="deleting" @click="deleteProject">
           {{ deleting ? '삭제 중…' : '프로젝트 삭제' }}
         </button>
@@ -172,7 +321,52 @@ async function deleteProject() {
         팀 채팅
         <span v-if="chatUnread > 0" class="tab-badge">{{ chatUnread > 99 ? '99+' : chatUnread }}</span>
       </button>
+      <button
+        v-if="canEvaluate"
+        type="button"
+        :class="{ active: activeTab === 'eval' }"
+        @click="activeTab = 'eval'"
+      >
+        팀원 평가
+      </button>
     </nav>
+
+    <!-- 팀원 별점 평가 -->
+    <div v-if="canEvaluate" v-show="activeTab === 'eval'" class="eval-panel">
+      <div class="card">
+        <h3>팀원 평가</h3>
+        <p class="eval-help">
+          함께한 팀원에게 별점을 남겨주세요. 별 반 개(0.5점) 단위로 줄 수 있어요. 언제든 다시 수정할 수 있습니다.
+          <strong>모든 평가는 익명으로 전달</strong>되며, 누가 어떤 평가를 남겼는지는 공개되지 않습니다.
+        </p>
+        <div v-if="evalLoading" class="empty">불러오는 중…</div>
+        <div v-else-if="evalRows.length === 0" class="empty">평가할 팀원이 없습니다.</div>
+        <ul v-else class="eval-list">
+          <li v-for="row in evalRows" :key="row.userId" class="eval-row">
+            <div class="eval-who">
+              <strong>{{ row.name }}</strong>
+              <span class="role">{{ row.role }}</span>
+            </div>
+            <div class="eval-stars">
+              <StarRating v-model="row.stars" :size="30" />
+              <span class="eval-score">{{ row.stars > 0 ? row.stars.toFixed(1) : '—' }}</span>
+            </div>
+            <textarea
+              class="input eval-comment"
+              v-model="row.comment"
+              maxlength="500"
+              rows="2"
+              placeholder="이 팀원의 좋았던 점·아쉬웠던 점을 간략히 적어주세요 (선택, 익명)"
+            ></textarea>
+          </li>
+        </ul>
+        <div class="eval-actions" v-if="evalRows.length > 0">
+          <button class="btn primary" :disabled="evalSubmitting" @click="submitRatings">
+            {{ evalSubmitting ? '저장 중…' : '평가 저장' }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- 팀 채팅 패널 — 계속 마운트해 두어(숨김) 다른 탭에서도 안읽음을 집계 -->
     <ProjectChat
@@ -185,6 +379,15 @@ async function deleteProject() {
 
     <!-- 개요 -->
     <div v-show="activeTab === 'overview'">
+    <!-- 팀장 안내: 시작 전이면 채팅이 잠겨 있음 -->
+    <div v-if="canStart" class="start-hint">
+      <span>
+        팀원을 다 모았다면 <strong>프로젝트 시작</strong>을 눌러주세요. 시작하면 팀 채팅이 열립니다.
+      </span>
+      <button class="btn primary small" :disabled="starting" @click="startProject">
+        {{ starting ? '시작 중…' : '⚡ 프로젝트 시작' }}
+      </button>
+    </div>
     <!-- 역할 현황 -->
     <div class="card">
       <div class="roles-head">
@@ -252,27 +455,54 @@ async function deleteProject() {
       <div class="card" v-if="isOwner">
         <h3>지원자 ({{ applicants.length }})</h3>
         <ul class="applicants">
-          <li v-for="a in applicants" :key="a.userId">
-            <div class="ainfo">
-              <strong>{{ a.name }}</strong>
-              <span class="role">{{ a.role }}</span>
+          <li v-for="a in applicants" :key="a.userId" class="applicant">
+            <div class="arow">
+              <div class="ainfo">
+                <strong>{{ a.name }}</strong>
+                <span class="role">{{ a.role }}</span>
+                <span class="arating" v-if="applicantRep[a.userId]">
+                  <StarRating :model-value="applicantRep[a.userId].stars" readonly :size="15" />
+                  <span class="arating-num">
+                    <template v-if="applicantRep[a.userId].count > 0">
+                      {{ applicantRep[a.userId].stars.toFixed(1) }} ({{ applicantRep[a.userId].count }})
+                    </template>
+                    <template v-else>평가 없음</template>
+                  </span>
+                </span>
+              </div>
+              <div class="abtns">
+                <button
+                  v-if="applicantRep[a.userId]?.reviews.length"
+                  class="btn small ghost"
+                  @click="toggleReviews(a.userId)"
+                >
+                  {{ expandedApplicant === a.userId ? '후기 닫기' : `후기 ${applicantRep[a.userId].reviews.length}` }}
+                </button>
+                <button
+                  class="btn small primary"
+                  :disabled="decideLoading === a.userId + 'ACCEPT'"
+                  @click="decide(a.userId, 'ACCEPT')"
+                >
+                  수락
+                </button>
+                <button
+                  class="btn small"
+                  :disabled="decideLoading === a.userId + 'REJECT'"
+                  @click="decide(a.userId, 'REJECT')"
+                >
+                  거절
+                </button>
+              </div>
             </div>
-            <div class="abtns">
-              <button
-                class="btn small primary"
-                :disabled="decideLoading === a.userId + 'ACCEPT'"
-                @click="decide(a.userId, 'ACCEPT')"
-              >
-                수락
-              </button>
-              <button
-                class="btn small"
-                :disabled="decideLoading === a.userId + 'REJECT'"
-                @click="decide(a.userId, 'REJECT')"
-              >
-                거절
-              </button>
-            </div>
+            <ul v-if="expandedApplicant === a.userId" class="reviews">
+              <li v-for="(rv, i) in applicantRep[a.userId].reviews" :key="i" class="review">
+                <div class="review-head">
+                  <StarRating :model-value="rv.stars" readonly :size="14" />
+                  <span class="review-date">{{ rv.ratedAt }}</span>
+                </div>
+                <p class="review-comment">{{ rv.comment }}</p>
+              </li>
+            </ul>
           </li>
           <li v-if="applicants.length === 0" class="empty">아직 지원자가 없습니다.</li>
         </ul>
@@ -340,6 +570,129 @@ async function deleteProject() {
 .status.closed {
   background: var(--c-canvas-parchment);
   color: var(--c-ink-muted-48);
+}
+.status.running {
+  background: var(--c-success-soft, #e3f5e8);
+  color: var(--c-success, #2e7d32);
+}
+.eval-help {
+  color: var(--c-fg-muted);
+  font-size: 0.92rem;
+  margin: 0 0 var(--s-md);
+}
+.eval-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-md);
+}
+.eval-row {
+  display: grid;
+  grid-template-columns: 160px auto 1fr;
+  align-items: center;
+  gap: var(--s-md);
+  padding: 12px 0;
+  border-bottom: 1px solid var(--c-border);
+}
+@media (max-width: 640px) {
+  .eval-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+.eval-who {
+  display: flex;
+  flex-direction: column;
+}
+.eval-stars {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.eval-score {
+  font-weight: 700;
+  color: #d99100;
+  min-width: 2.2em;
+}
+.eval-comment {
+  width: 100%;
+}
+.eval-actions {
+  margin-top: var(--s-md);
+  display: flex;
+  justify-content: flex-end;
+}
+textarea.eval-comment {
+  resize: vertical;
+  font: inherit;
+}
+
+/* 지원자 평판 */
+.applicants li.applicant {
+  display: block;
+  align-items: stretch;
+}
+.applicant .arow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-sm);
+}
+.arating {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+.arating-num {
+  font-size: 0.8rem;
+  color: var(--c-fg-muted);
+  font-weight: 600;
+}
+.btn.ghost {
+  background: transparent;
+  border: 1px solid var(--c-border);
+  color: var(--c-fg-muted);
+}
+.reviews {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  background: var(--c-canvas-parchment, #faf8f3);
+  border-radius: var(--r-md, 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.review-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.review-date {
+  font-size: 0.75rem;
+  color: var(--c-ink-muted-48, var(--c-fg-muted));
+}
+.review-comment {
+  margin: 2px 0 0;
+  font-size: 0.9rem;
+  color: var(--c-ink, var(--c-fg));
+  white-space: pre-wrap;
+}
+.start-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-sm);
+  flex-wrap: wrap;
+  margin-top: var(--s-md);
+  padding: 12px 16px;
+  border: 1px solid var(--c-accent-soft, var(--c-border));
+  background: var(--c-accent-soft, var(--c-canvas-parchment));
+  border-radius: var(--r-md, 10px);
+  font-size: 0.92rem;
 }
 .roles-head {
   display: flex;

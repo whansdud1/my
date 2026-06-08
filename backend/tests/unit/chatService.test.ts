@@ -19,11 +19,15 @@ const insertMessage =
 const listByProject = jest.fn<(p: number, opts: unknown) => Promise<unknown[]>>();
 const insertMany = jest.fn<(messageId: number, items: unknown[]) => Promise<void>>();
 const listByMessageIds = jest.fn<(ids: number[]) => Promise<unknown[]>>();
+const findProjectById = jest.fn<(id: number) => Promise<{ status: string } | null>>();
 const emitToProject = jest.fn();
 
 jest.unstable_mockModule('../../src/repositories/projectMembers.js', () => ({
   findOne,
   countAcceptedByProject,
+}));
+jest.unstable_mockModule('../../src/repositories/projects.js', () => ({
+  findById: findProjectById,
 }));
 jest.unstable_mockModule('../../src/repositories/projectMessages.js', () => ({
   insert: insertMessage,
@@ -67,6 +71,7 @@ const attRow = (over: Partial<Record<string, unknown>> = {}) => ({
 beforeEach(() => {
   jest.clearAllMocks();
   findOne.mockResolvedValue({ state: 'ACCEPTED' }); // 기본: 멤버
+  findProjectById.mockResolvedValue({ status: 'RUNNING' }); // 기본: 시작된 프로젝트
 });
 
 describe('postMessage 검증', () => {
@@ -84,6 +89,12 @@ describe('postMessage 검증', () => {
     await expect(Chat.postMessage(1, 7, '안녕')).rejects.toMatchObject({ httpStatus: 403 });
     findOne.mockResolvedValue(null);
     await expect(Chat.postMessage(1, 7, '안녕')).rejects.toMatchObject({ httpStatus: 403 });
+  });
+
+  it('프로젝트가 시작 전(RECRUIT)이면 멤버여도 403', async () => {
+    findProjectById.mockResolvedValue({ status: 'RECRUIT' });
+    await expect(Chat.postMessage(1, 7, '안녕')).rejects.toMatchObject({ httpStatus: 403 });
+    expect(insertMessage).not.toHaveBeenCalled();
   });
 
   it('정상 전송 시 DTO 반환 + message:new 브로드캐스트', async () => {

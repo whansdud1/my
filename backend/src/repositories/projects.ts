@@ -77,8 +77,11 @@ export async function list(f: ListFilters): Promise<{ items: ProjectRow[]; total
     const like = `%${f.q}%`;
     params.push(like, like);
   }
-  // 모집 완료 후 1일이 지난 프로젝트는 목록에서 숨김
-  where.push('(recruit_closed_at IS NULL OR recruit_closed_at >= NOW(3) - INTERVAL 1 DAY)');
+  // 모집 완료 후 1일이 지난 '모집 중' 프로젝트는 목록에서 숨김.
+  // (RUNNING 등 시작된 프로젝트는 recruit_closed_at 이 오래돼도 계속 노출)
+  where.push(
+    `(status <> 'RECRUIT' OR recruit_closed_at IS NULL OR recruit_closed_at >= NOW(3) - INTERVAL 1 DAY)`,
+  );
   const page = f.page && f.page > 0 ? f.page : 1;
   const pageSize = Math.min(Math.max(f.pageSize ?? 20, 1), 100);
   const offset = (page - 1) * pageSize;
@@ -105,12 +108,26 @@ export async function remove(id: number): Promise<void> {
   await getPool().query(`DELETE FROM projects WHERE id = ?`, [id]);
 }
 
-// 모집 완료 처리 — 상태를 RUNNING 으로 바꾸고 완료 시각을 기록.
+// 모집 완료 처리 — 상태는 RECRUIT 로 유지하고 완료 시각만 기록.
+// (RUNNING 전환은 팀장이 직접 '프로젝트 시작'을 눌러야 일어난다 → start() 참고)
 export async function closeRecruit(id: number): Promise<void> {
   await getPool().query(
-    `UPDATE projects SET status = 'RUNNING', recruit_closed_at = NOW(3) WHERE id = ?`,
+    `UPDATE projects SET recruit_closed_at = NOW(3) WHERE id = ?`,
     [id],
   );
+}
+
+// 프로젝트 시작 — 팀장이 수동으로 RUNNING 전환. 아직 모집이 안 닫혔으면 종료 시각도 기록.
+export async function start(id: number): Promise<void> {
+  await getPool().query(
+    `UPDATE projects SET status = 'RUNNING', recruit_closed_at = COALESCE(recruit_closed_at, NOW(3)) WHERE id = ?`,
+    [id],
+  );
+}
+
+// 프로젝트 완료 — 팀장이 진행 중(RUNNING) 프로젝트를 완료(CLOSED) 처리. 이후 팀원 별점 평가가 열린다.
+export async function complete(id: number): Promise<void> {
+  await getPool().query(`UPDATE projects SET status = 'CLOSED' WHERE id = ?`, [id]);
 }
 
 export async function patch(id: number, fields: Partial<{ title: string; description: string | null; targetSize: number; startsAt: string | null; endsAt: string | null; workTimePref: ProjectRow['work_time_pref']; status: ProjectRow['status'] }>): Promise<void> {

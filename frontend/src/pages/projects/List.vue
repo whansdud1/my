@@ -1,15 +1,38 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { onMounted, ref } from 'vue';
 import { useProjectStore } from '../../stores/projects';
 import { RouterLink } from 'vue-router';
 
 const store = useProjectStore();
-onMounted(() => store.fetchList());
 
-// 모집 중(RECRUIT)인지에 따라 라벨 표기. 팀원을 다 구하면 RECRUIT 가 풀려 '팀원 모집 종료'로 보인다.
-function statusLabel(status: string) {
-  return status === 'RECRUIT' ? '팀원 모집 중' : '팀원 모집 종료';
+// 탭: 모집 중(RECRUIT) / 진행 중(RUNNING) / 완료(CLOSED)
+type Tab = 'RECRUIT' | 'RUNNING' | 'CLOSED';
+const tabs: Array<{ key: Tab; label: string }> = [
+  { key: 'RECRUIT', label: '모집 중' },
+  { key: 'RUNNING', label: '진행 중' },
+  { key: 'CLOSED', label: '완료' },
+];
+const activeTab = ref<Tab>('RECRUIT');
+
+function selectTab(tab: Tab) {
+  if (activeTab.value === tab) return;
+  activeTab.value = tab;
+  store.fetchList({ status: tab });
 }
+
+onMounted(() => store.fetchList({ status: activeTab.value }));
+
+function statusLabel(status: string) {
+  if (status === 'RECRUIT') return '팀원 모집 중';
+  if (status === 'RUNNING') return '진행 중';
+  return '완료';
+}
+
+const emptyText: Record<Tab, string> = {
+  RECRUIT: '모집 중인 프로젝트가 없습니다.',
+  RUNNING: '진행 중인 프로젝트가 없습니다.',
+  CLOSED: '완료된 프로젝트가 없습니다.',
+};
 </script>
 
 <template>
@@ -19,10 +42,24 @@ function statusLabel(status: string) {
       <RouterLink to="/projects/new" class="btn primary">+ 새 프로젝트</RouterLink>
     </header>
 
+    <nav class="tabs">
+      <button
+        v-for="t in tabs"
+        :key="t.key"
+        type="button"
+        :class="{ active: activeTab === t.key }"
+        @click="selectTab(t.key)"
+      >
+        {{ t.label }}
+      </button>
+    </nav>
+
     <div v-if="store.loading">불러오는 중…</div>
     <div v-else-if="store.list.length === 0" class="empty card">
-      <p>아직 프로젝트가 없습니다.</p>
-      <RouterLink to="/projects/new" class="btn primary">첫 프로젝트 만들기</RouterLink>
+      <p>{{ emptyText[activeTab] }}</p>
+      <RouterLink v-if="activeTab === 'RECRUIT'" to="/projects/new" class="btn primary">
+        첫 프로젝트 만들기
+      </RouterLink>
     </div>
     <ul v-else class="list">
       <li v-for="p in store.list" :key="p.id" class="card">
@@ -50,6 +87,31 @@ function statusLabel(status: string) {
 .page-head h1 {
   font-size: 40px;
   margin: 0;
+}
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--c-border);
+  margin-bottom: var(--s-lg);
+}
+.tabs button {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 16px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--c-ink-muted-48, var(--c-fg-muted));
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.tabs button.active {
+  color: var(--c-primary, #0066cc);
+  border-bottom-color: var(--c-primary, #0066cc);
+}
+.tabs button:hover {
+  color: var(--c-ink, var(--c-fg));
 }
 .list {
   list-style: none;
@@ -103,7 +165,9 @@ function statusLabel(status: string) {
   background: #e7f5ec;
   color: #047857;
 }
-.status[data-status='COMPLETED'] {
+.status[data-status='COMPLETED'],
+.status[data-status='CLOSED'],
+.status[data-status='ARCHIVED'] {
   background: var(--c-canvas-parchment);
   color: var(--c-ink-muted-48);
 }
