@@ -1,11 +1,14 @@
+import path from 'node:path';
 import { Router } from 'express';
 import { z } from 'zod';
 import { validate } from '../middlewares/validate.js';
 import { requireAuth, type AuthedRequest } from '../middlewares/auth.js';
 import { assertOwner } from '../middlewares/rbac.js';
+import { chatUploadArray, uploadsRoot } from '../middlewares/upload.js';
 import { ok, Errors } from '../lib/envelope.js';
 import * as Projects from '../repositories/projects.js';
 import * as Members from '../repositories/projectMembers.js';
+import * as Attachments from '../repositories/messageAttachments.js';
 import * as Invites from '../services/projects/invites.js';
 import * as Chat from '../services/chat/index.js';
 import { recommend } from '../services/matching/index.js';
@@ -577,6 +580,82 @@ projectsRouter.post(
     try {
       const result = await Chat.markRead(Number(req.params.id), req.user!.id, req.body.messageId);
       res.json(ok(result));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// --- 팀 채팅: POST /projects/:id/messages/attachments — 사진/파일 첨부 메시지 ---
+// multipart/form-data: files[](최대 N개) + body(선택). 저장 후 동일 room 에 message:new 브로드캐스트.
+// 소켓으로 바이너리를 보내기 어려우므로 첨부는 항상 이 REST 경로를 사용한다.
+projectsRouter.post(
+  '/projects/:id/messages/attachments',
+  requireAuth,
+  chatUploadArray('files'),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const projectId = Number(req.params.id);
+      const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+      if (files.length === 0) throw Errors.Validation('첨부할 파일을 선택해주세요');
+      const items: Attachments.NewAttachment[] = files.map((f) => ({
+        kind: f.mimetype.startsWith('image/') ? 'image' : 'file',
+        // multer 가 latin1 로 디코드한 한글 파일명을 utf-8 로 복원
+        originalName: Buffer.from(f.originalname, 'latin1').toString('utf8'),
+        mimeType: f.mimetype,
+        byteSize: f.size,
+        storageKey: path.relative(uploadsRoot, f.path),
+      }));
+      const body = typeof req.body?.body === 'string' ? req.body.body : '';
+      const clientId = typeof req.body?.clientId === 'string' ? req.body.clientId : undefined;
+      const dto = await Chat.postMessageWithAttachments(
+        projectId,
+        req.user!.id,
+        body,
+        items,
+        clientId,
+      );
+      res.status(201).json(ok(dto));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// --- 팀 채팅: GET /projects/:id/attachments/:attId — 첨부 다운로드/보기(멤버십 검증) ---
+// 디스크 경로는 노출하지 않고 이 라우트로만 접근. 이미지는 inline, 그 외는 다운로드.
+const attachmentParamsSchema = z.object({
+  id: z.coerce.number().int().positive(),
+  attId: z.coerce.number().int().positive(),
+});
+projectsRouter.get(
+  '/projects/:id/attachments/:attId',
+  requireAuth,
+  validate({ params: attachmentParamsSchema }),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const projectId = Number(req.params.id);
+      const att = await Attachments.findWithProject(Number(req.params.attId));
+      if (!att || att.project_id !== projectId) throw Errors.NotFound('첨부를 찾을 수 없습니다');
+      await Chat.assertMember(projectId, req.user!.id); // ACCEPTED 멤버만
+
+      // 경로 조작 방지 — 저장 키를 절대경로화한 뒤 업로드 루트 밖이면 거부.
+      const absPath = path.resolve(uploadsRoot, att.storage_key);
+      if (absPath !== uploadsRoot && !absPath.startsWith(uploadsRoot + path.sep)) {
+        throw Errors.NotFound('첨부를 찾을 수 없습니다');
+      }
+      const filenameStar = encodeURIComponent(att.original_name);
+      const disposition = att.kind === 'image' ? 'inline' : 'attachment';
+      res.sendFile(absPath, {
+        headers: {
+          'Content-Type': att.mime_type,
+          'Content-Disposition': `${disposition}; filename*=UTF-8''${filenameStar}`,
+          'Cache-Control': 'private, max-age=86400',
+          'X-Content-Type-Options': 'nosniff',
+        },
+      }, (err) => {
+        if (err && !res.headersSent) next(Errors.NotFound('첨부 파일을 읽을 수 없습니다'));
+      });
     } catch (e) {
       next(e);
     }

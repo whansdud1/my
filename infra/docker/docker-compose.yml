@@ -62,6 +62,10 @@ services:
       SMTP_HOST: mailhog
       SMTP_PORT: "1025"
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # 채팅 첨부 저장 경로 — 아래 볼륨으로 영속화(컨테이너 재시작에도 유지)
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - ./data/uploads:/app/uploads
     depends_on:
       mariadb:
         condition: service_healthy

@@ -5,11 +5,22 @@ import { api } from '../services/api';
 import { getSocket } from '../services/socket';
 import { useAuthStore } from '../stores/auth';
 import { useNotificationsStore } from '../stores/notifications';
+import ChatAttachment from './ChatAttachment.vue';
 
 const props = withDefaults(defineProps<{ projectId: string; active?: boolean }>(), {
   active: true,
 });
 const emit = defineEmits<{ (e: 'update:unread', count: number): void }>();
+
+interface Attachment {
+  id: string;
+  kind: 'image' | 'file';
+  name: string;
+  mime: string;
+  size: number;
+  url: string;
+  localUrl?: string; // 업로드 직후 미리보기용(내 낙관적 메시지)
+}
 
 interface ChatMessage {
   id: string;
@@ -18,6 +29,7 @@ interface ChatMessage {
   name: string;
   body: string;
   createdAt: string;
+  attachments?: Attachment[]; // 사진/파일 첨부
   clientId?: string; // 낙관적 전송 추적용(서버 에코로 정합)
   pending?: boolean; // 전송 중
   failed?: boolean; // 전송 실패(재시도 가능)
@@ -67,7 +79,13 @@ let seq = 0;
 
 const PAGE = 50;
 const MAX_LEN = 2000;
+const MAX_FILES = 10;
+const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB(백엔드와 동일)
 const nearLimit = computed(() => draft.value.length > MAX_LEN - 200);
+
+const fileInputEl = ref<HTMLInputElement | null>(null);
+const localUrls: string[] = []; // 미리보기 objectURL — 언마운트 시 일괄 revoke
+const pendingFiles = new Map<string, File[]>(); // clientId → 재전송용 파일 보관
 
 // --- 메시지 컬렉션 헬퍼 ---
 function findByClient(clientId: string): ChatMessage | undefined {
@@ -155,6 +173,7 @@ function reconcile(real: ChatMessage) {
     temp.id = real.id;
     temp.createdAt = real.createdAt;
     temp.name = real.name;
+    if (real.attachments) temp.attachments = real.attachments; // 서버 확정 url 로 교체
     temp.pending = false;
     temp.failed = false;
     seen.add(real.id);
@@ -408,11 +427,96 @@ async function sendViaRest(clientId: string, body: string) {
   }
 }
 
+// --- 첨부(사진/파일) 업로드 ---
+function pickFiles() {
+  fileInputEl.value?.click();
+}
+async function onFilesPicked(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const files = input.files ? Array.from(input.files) : [];
+  input.value = ''; // 같은 파일 재선택 허용
+  if (files.length) await uploadFiles(files);
+}
+
+async function uploadFiles(filesIn: File[]) {
+  let files = filesIn;
+  if (files.length > MAX_FILES) {
+    notify.error(`한 번에 최대 ${MAX_FILES}개까지 보낼 수 있어요.`);
+    files = files.slice(0, MAX_FILES);
+  }
+  const tooBig = files.find((f) => f.size > MAX_FILE_BYTES);
+  if (tooBig) {
+    notify.error(`"${tooBig.name}" 파일이 너무 커요(최대 20MB).`);
+    return;
+  }
+
+  // 낙관적 메시지 — 로컬 미리보기로 즉시 표시(이미지는 objectURL)
+  const clientId = `c${Date.now()}-${++seq}`;
+  const localAttachments: Attachment[] = files.map((f, i) => {
+    const isImg = f.type.startsWith('image/');
+    const localUrl = isImg ? URL.createObjectURL(f) : undefined;
+    if (localUrl) localUrls.push(localUrl);
+    return {
+      id: `${clientId}-a${i}`,
+      kind: isImg ? 'image' : 'file',
+      name: f.name,
+      mime: f.type || 'application/octet-stream',
+      size: f.size,
+      url: '',
+      localUrl,
+    };
+  });
+  pendingFiles.set(clientId, files);
+  pushMessage({
+    id: clientId,
+    clientId,
+    projectId: props.projectId,
+    userId: myId.value,
+    name: myName.value,
+    body: '',
+    attachments: localAttachments,
+    createdAt: new Date().toISOString(),
+    pending: true,
+  });
+  await scrollToBottom(true);
+  await deliverFiles(clientId);
+}
+
+// 첨부는 항상 REST(multipart) 로 전송 — 소켓은 바이너리에 부적합.
+async function deliverFiles(clientId: string) {
+  const files = pendingFiles.get(clientId);
+  if (!files) return;
+  const m = findByClient(clientId);
+  if (m) {
+    m.pending = true;
+    m.failed = false;
+  }
+  const form = new FormData();
+  for (const f of files) form.append('files', f);
+  form.append('clientId', clientId);
+  try {
+    const { data } = await api.post<ChatMessage>(
+      `/projects/${props.projectId}/messages/attachments`,
+      form,
+    );
+    data.clientId = clientId; // 응답엔 clientId 가 없으므로 직접 매칭
+    reconcile(data);
+    pendingFiles.delete(clientId);
+    await scrollToBottom(true);
+  } catch (err) {
+    markFailed(clientId);
+    const e = err as { detail?: string; title?: string };
+    notify.error(e?.detail || e?.title || '파일 전송에 실패했어요. 첨부를 눌러 다시 시도할 수 있어요.');
+  }
+}
+
 function retry(m: ChatMessage) {
   if (!m.failed || !m.clientId) return;
   m.failed = false;
   m.pending = true;
-  deliver(m.clientId, m.body);
+  // 첨부 메시지는 보관해둔 파일로 재업로드, 그 외는 텍스트 재전송
+  if (m.attachments?.length && pendingFiles.has(m.clientId)) void deliverFiles(m.clientId);
+  else deliver(m.clientId, m.body);
 }
 
 // --- 표시 헬퍼 ---
@@ -471,6 +575,7 @@ onBeforeUnmount(() => {
   if (typingTimer) clearTimeout(typingTimer);
   for (const t of typingUsers.values()) clearTimeout(t);
   for (const t of pendingTimers.values()) clearTimeout(t);
+  for (const u of localUrls) URL.revokeObjectURL(u); // 미리보기 메모리 해제
   if (socket) {
     socket.emit('room:leave', props.projectId);
     socket.off('connect');
@@ -547,7 +652,16 @@ watch(
             <div class="bubble-wrap">
               <div v-if="m.userId !== myId && !isGrouped(i)" class="who">{{ m.name }}</div>
               <div class="line">
-                <div class="bubble" :class="{ pending: m.pending, failed: m.failed }">{{ m.body }}</div>
+                <div class="cluster" :class="{ pending: m.pending, failed: m.failed }">
+                  <div
+                    v-if="m.attachments && m.attachments.length"
+                    class="atts"
+                    :class="{ multi: m.attachments.length > 1 }"
+                  >
+                    <ChatAttachment v-for="a in m.attachments" :key="a.id" :att="a" />
+                  </div>
+                  <div v-if="m.body" class="bubble">{{ m.body }}</div>
+                </div>
                 <span v-if="m.pending" class="time st">전송 중…</span>
                 <button v-else-if="m.failed" type="button" class="retry" @click="retry(m)">
                   ⚠ 재전송
@@ -588,6 +702,24 @@ watch(
     </div>
 
     <form class="composer" @submit.prevent="send">
+      <input
+        ref="fileInputEl"
+        type="file"
+        multiple
+        class="file-hidden"
+        @change="onFilesPicked"
+      />
+      <button
+        type="button"
+        class="attach"
+        @click="pickFiles"
+        title="사진·파일 첨부"
+        aria-label="사진·파일 첨부"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+        </svg>
+      </button>
       <textarea
         ref="inputEl"
         v-model="draft"
@@ -765,6 +897,42 @@ watch(
   border-color: var(--c-danger, #b00020);
   background: color-mix(in srgb, var(--c-danger, #b00020) 8%, var(--c-primary, #0066cc));
 }
+
+/* 텍스트 + 첨부 묶음 */
+.cluster {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.row.mine .cluster {
+  align-items: flex-end;
+}
+.cluster.pending {
+  opacity: 0.6;
+}
+.cluster.failed .bubble {
+  border-color: var(--c-danger, #b00020);
+}
+.cluster.failed .atts {
+  outline: 1px solid var(--c-danger, #b00020);
+  outline-offset: 2px;
+  border-radius: var(--r-md, 12px);
+}
+.atts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.atts.multi {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+/* 첨부가 1개뿐인 이미지/파일은 폭을 내용에 맞춤 */
+.row.mine .atts {
+  justify-items: end;
+}
 .meta {
   display: flex;
   flex-direction: column;
@@ -883,6 +1051,28 @@ watch(
   font-family: inherit;
   font-size: 0.95rem;
   line-height: 1.4;
+}
+.file-hidden {
+  display: none;
+}
+.attach {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md, 12px);
+  background: var(--c-canvas);
+  color: var(--c-ink-muted-48, var(--c-fg-muted));
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.attach:hover {
+  color: var(--c-primary, #0066cc);
+  border-color: var(--c-primary, #0066cc);
+  background: color-mix(in srgb, var(--c-primary, #0066cc) 6%, var(--c-canvas));
 }
 .composer .count {
   font-size: 0.72rem;

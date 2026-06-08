@@ -50,5 +50,9 @@ test-results/
 infra/docker/data/
 infra/docker/logs/
 
+# 채팅 첨부 업로드(로컬 개발) — 운영은 볼륨/UPLOAD_DIR 로 영속화
+backend/uploads/
+uploads/
+
 # Generated docs
 docs/api/generated/

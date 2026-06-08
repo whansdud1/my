@@ -2,11 +2,16 @@ import rateLimit from 'express-rate-limit';
 import type { AuthedRequest } from './auth.js';
 
 // FR-A8 / FR-B7: 인증 사용자 60/min, 익명 20/min — 동일 라우트에 적용
+// 채팅 첨부(이미지) 보기 — 한 화면에 여러 장이 동시에 로드될 수 있어 일반 API 한도에서 제외.
+// (멤버십 검증은 라우트에서 별도로 수행하므로 보안엔 영향 없음)
+const ATTACHMENT_GET = /\/projects\/\d+\/attachments\/\d+$/;
+
 export const apiRateLimit = rateLimit({
   windowMs: 60_000,
   limit: (req) => ((req as AuthedRequest).user ? 60 : 20),
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  skip: (req) => req.method === 'GET' && ATTACHMENT_GET.test(req.path),
   keyGenerator: (req) => {
     const u = (req as AuthedRequest).user;
     if (u) return `u:${u.id}`;
