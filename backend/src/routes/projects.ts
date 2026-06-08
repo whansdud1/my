@@ -12,6 +12,7 @@ import * as Attachments from '../repositories/messageAttachments.js';
 import * as Invites from '../services/projects/invites.js';
 import * as Chat from '../services/chat/index.js';
 import { recommend } from '../services/matching/index.js';
+import { composeTeam } from '../services/matching/compose.js';
 import { audit } from '../services/audit.js';
 
 export const projectsRouter = Router();
@@ -70,7 +71,12 @@ const createSchema = z.object({
   type: z.enum(['CONTEST', 'CLASS', 'SELF']).optional(),
   capacity: z.number().int().min(2).max(20),
   requiredRoles: z
-    .array(z.union([z.string().max(40), z.object({ role: z.string().max(40), count: z.number().int().min(1).max(20) })]))
+    .array(
+      z.union([
+        z.string().max(40),
+        z.object({ role: z.string().max(40), count: z.number().int().min(1).max(20) }),
+      ]),
+    )
     .max(20)
     .optional(),
   startDate: z.string().optional(),
@@ -124,7 +130,12 @@ projectsRouter.post(
         conn.release();
       }
       const project = await Projects.findById(id);
-      await audit({ actorId: req.user!.id, action: 'PROJECT_CREATE', targetType: 'project', targetId: id });
+      await audit({
+        actorId: req.user!.id,
+        action: 'PROJECT_CREATE',
+        targetType: 'project',
+        targetId: id,
+      });
       res.status(201).json(ok(projectDto(project!)));
     } catch (e) {
       next(e);
@@ -266,7 +277,12 @@ projectsRouter.delete('/projects/:id', requireAuth, async (req: AuthedRequest, r
       throw Errors.Validation('모집 중인 프로젝트만 삭제할 수 있습니다');
     }
     await Projects.remove(id);
-    await audit({ actorId: req.user!.id, action: 'PROJECT_DELETE', targetType: 'project', targetId: id });
+    await audit({
+      actorId: req.user!.id,
+      action: 'PROJECT_DELETE',
+      targetType: 'project',
+      targetId: id,
+    });
     res.json(ok({ deleted: true }));
   } catch (e) {
     next(e);
@@ -283,10 +299,9 @@ projectsRouter.get('/projects/:id/members', requireAuth, async (req, res, next) 
     const userIds = rows.map((r) => r.user_id);
     const names: Record<number, string> = {};
     if (userIds.length > 0) {
-      const [urows] = (await getPool().query(
-        `SELECT id, name FROM users WHERE id IN (?)`,
-        [userIds],
-      )) as unknown as [Array<{ id: number; name: string }>];
+      const [urows] = (await getPool().query(`SELECT id, name FROM users WHERE id IN (?)`, [
+        userIds,
+      ])) as unknown as [Array<{ id: number; name: string }>];
       for (const u of urows) names[u.id] = u.name;
     }
     res.json(
@@ -321,7 +336,8 @@ projectsRouter.post(
       if (!project) throw Errors.NotFound();
 
       const userId = req.user!.id;
-      if (project.owner_id === userId) throw Errors.Validation('본인 프로젝트에는 지원할 수 없습니다');
+      if (project.owner_id === userId)
+        throw Errors.Validation('본인 프로젝트에는 지원할 수 없습니다');
       if (project.status !== 'RECRUIT') throw Errors.Validation('모집 중인 프로젝트가 아닙니다');
 
       const role = req.body.role as string;
@@ -415,7 +431,8 @@ projectsRouter.post(
       }
 
       const member = await Members.findOne(projectId, applicantId);
-      if (!member || member.state !== 'APPLIED') throw Errors.NotFound('대기 중인 지원자가 아닙니다');
+      if (!member || member.state !== 'APPLIED')
+        throw Errors.NotFound('대기 중인 지원자가 아닙니다');
 
       if (req.body.action === 'REJECT') {
         await Members.setState(member.id, 'REJECTED');
@@ -435,7 +452,8 @@ projectsRouter.post(
       const reqRole = required.find((r) => r.role === member.role);
       const acceptedCounts = await Members.acceptedRoleCounts(projectId);
       const filled = acceptedCounts[member.role] ?? 0;
-      if (reqRole && reqRole.count - filled <= 0) throw Errors.Conflict('해당 역할은 이미 마감되었습니다');
+      if (reqRole && reqRole.count - filled <= 0)
+        throw Errors.Conflict('해당 역할은 이미 마감되었습니다');
       const acceptedTotal = await Members.countAcceptedByProject(projectId);
       if (acceptedTotal >= project.target_size) throw Errors.Conflict('팀 정원이 가득 찼습니다');
 
@@ -498,7 +516,9 @@ projectsRouter.post(
         invitedEmail: req.body.email,
         role: req.body.role ?? 'MEMBER',
       });
-      res.status(201).json(ok({ memberId: String(result.memberId), userId: String(result.userId) }));
+      res
+        .status(201)
+        .json(ok({ memberId: String(result.memberId), userId: String(result.userId) }));
     } catch (e) {
       next(e);
     }
@@ -646,16 +666,20 @@ projectsRouter.get(
       }
       const filenameStar = encodeURIComponent(att.original_name);
       const disposition = att.kind === 'image' ? 'inline' : 'attachment';
-      res.sendFile(absPath, {
-        headers: {
-          'Content-Type': att.mime_type,
-          'Content-Disposition': `${disposition}; filename*=UTF-8''${filenameStar}`,
-          'Cache-Control': 'private, max-age=86400',
-          'X-Content-Type-Options': 'nosniff',
+      res.sendFile(
+        absPath,
+        {
+          headers: {
+            'Content-Type': att.mime_type,
+            'Content-Disposition': `${disposition}; filename*=UTF-8''${filenameStar}`,
+            'Cache-Control': 'private, max-age=86400',
+            'X-Content-Type-Options': 'nosniff',
+          },
         },
-      }, (err) => {
-        if (err && !res.headersSent) next(Errors.NotFound('첨부 파일을 읽을 수 없습니다'));
-      });
+        (err) => {
+          if (err && !res.headersSent) next(Errors.NotFound('첨부 파일을 읽을 수 없습니다'));
+        },
+      );
     } catch (e) {
       next(e);
     }
@@ -676,6 +700,36 @@ projectsRouter.get(
       const limit = Number((req.query as { limit?: number }).limit ?? 10);
       const list = await recommend(id, limit);
       res.json(ok(list));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// --- POST /projects/:id/auto-compose — 자동 팀 편성(소유자/ADMIN) ---
+// commit=false(기본): 제안 미리보기만 반환. commit=true: 제안 후보에게 일괄 초대 발송.
+const composeSchema = z.object({
+  commit: z.boolean().default(false),
+  poolLimit: z.number().int().min(1).max(200).optional(),
+});
+projectsRouter.post(
+  '/projects/:id/auto-compose',
+  requireAuth,
+  validate({ body: composeSchema }),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const projectId = Number(req.params.id);
+      const project = await Projects.findById(projectId);
+      if (!project) throw Errors.NotFound();
+      if (project.owner_id !== req.user!.id && req.user!.role !== 'ADMIN') {
+        throw Errors.Forbidden('자동 편성 권한이 없습니다');
+      }
+      const result = await composeTeam(projectId, {
+        commit: req.body.commit === true,
+        inviterId: req.user!.id,
+        poolLimit: req.body.poolLimit,
+      });
+      res.json(ok(result));
     } catch (e) {
       next(e);
     }
