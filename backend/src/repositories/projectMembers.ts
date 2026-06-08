@@ -51,20 +51,20 @@ export async function setState(id: number, state: MemberState, joinedAt?: Date):
 
 // FR-B6: 동시 진행 한도 3건 가드용
 export async function countActiveByUser(userId: number): Promise<number> {
-  const [[{ cnt }]] = (await getPool().query(
+  const [rows] = (await getPool().query(
     `SELECT COUNT(*) AS cnt FROM project_members
         WHERE user_id = ? AND state IN ('INVITED','ACCEPTED')`,
     [userId],
   )) as unknown as [Array<{ cnt: number }>];
-  return cnt;
+  return rows[0]?.cnt ?? 0;
 }
 
 export async function countAcceptedByProject(projectId: number): Promise<number> {
-  const [[{ cnt }]] = (await getPool().query(
+  const [rows] = (await getPool().query(
     `SELECT COUNT(*) AS cnt FROM project_members WHERE project_id = ? AND state = 'ACCEPTED'`,
     [projectId],
   )) as unknown as [Array<{ cnt: number }>];
-  return cnt;
+  return rows[0]?.cnt ?? 0;
 }
 
 // 본인이 속한(참여/대기/초대) 프로젝트 목록 — 프로필의 "내 프로젝트"용.

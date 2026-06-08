@@ -83,7 +83,7 @@ export async function list(f: ListFilters): Promise<{ items: ProjectRow[]; total
   const pageSize = Math.min(Math.max(f.pageSize ?? 20, 1), 100);
   const offset = (page - 1) * pageSize;
 
-  const [[{ cnt }]] = (await getPool().query(
+  const [countRows] = (await getPool().query(
     `SELECT COUNT(*) AS cnt FROM projects WHERE ${where.join(' AND ')}`,
     params,
   )) as unknown as [Array<{ cnt: number }>];
@@ -93,7 +93,7 @@ export async function list(f: ListFilters): Promise<{ items: ProjectRow[]; total
     [...params, pageSize, offset],
   )) as unknown as [ProjectRow[]];
 
-  return { items: rows, total: cnt };
+  return { items: rows, total: countRows[0]?.cnt ?? 0 };
 }
 
 export async function updateStatus(id: number, status: ProjectRow['status']): Promise<void> {

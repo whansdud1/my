@@ -10,19 +10,22 @@ import { logger } from '../../lib/logger.js';
 export async function recomputeRating(userId: number): Promise<{ stars: number; count: number }> {
   const pool = getPool();
   // peer 평균 (APPLIED 만 반영)
-  const [[peer]] = (await pool.query(
+  const [peerRows] = (await pool.query(
     `SELECT AVG((contribution + communication + responsibility + satisfaction) / 4) AS avg_peer,
             COUNT(*) AS cnt
        FROM evaluations
        WHERE evaluatee_id = ? AND review_state = 'APPLIED'`,
     [userId],
   )) as unknown as [Array<{ avg_peer: string | null; cnt: number }>];
+  // 집계는 항상 1행이지만 타입상 optional → 폴백으로 좁힌다.
+  const peer = peerRows[0] ?? { avg_peer: null, cnt: 0 };
 
   // AI 평균
-  const [[ai]] = (await pool.query(
+  const [aiRows] = (await pool.query(
     `SELECT AVG(total) AS avg_ai FROM ai_scores WHERE user_id = ?`,
     [userId],
   )) as unknown as [Array<{ avg_ai: string | null }>];
+  const ai = aiRows[0] ?? { avg_ai: null };
 
   const peerAvg = peer.avg_peer ? Number(peer.avg_peer) : null;
   const aiAvg = ai.avg_ai ? Number(ai.avg_ai) : null;
