@@ -78,13 +78,19 @@ function setHover(v: number | null) {
   width: 1em;
   height: 1em;
 }
-.bg {
-  color: var(--c-border, #d9d9d9);
-}
+/* 배경(회색)·채움(금색) 별을 모두 같은 위치에 겹쳐 정확히 정렬 */
+.bg,
 .fg {
   position: absolute;
   left: 0;
   top: 0;
+  height: 1em;
+  line-height: 1;
+}
+.bg {
+  color: var(--c-border, #d9d9d9);
+}
+.fg {
   overflow: hidden;
   color: #f5b301;
   white-space: nowrap;

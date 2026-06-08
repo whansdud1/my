@@ -209,6 +209,14 @@ async function loadEvaluation() {
 }
 
 async function submitRatings() {
+  // 코멘트만 적고 별점을 안 준 경우 — 코멘트가 저장되지 않으므로 막고 안내
+  const missingStar = evalRows.value.filter((r) => r.comment.trim() && r.stars === 0);
+  if (missingStar.length > 0) {
+    notify.warn(
+      `${missingStar.map((r) => r.name).join(', ')}님은 코멘트만 있고 별점이 없습니다. 별점을 함께 선택해주세요.`,
+    );
+    return;
+  }
   const items = evalRows.value
     .filter((r) => r.stars > 0)
     .map((r) => ({ rateeId: r.userId, stars: r.stars, comment: r.comment.trim() || undefined }));
