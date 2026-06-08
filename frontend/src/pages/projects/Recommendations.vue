@@ -137,7 +137,7 @@ function closeProposal() {
   <section class="page rec">
     <div class="head">
       <div>
-        <h1>매칭 후보</h1>
+        <h1>추천 팀원</h1>
         <p class="hint">
           역할별 탭 · 별점(★) 높은 순 상위 10명. 점수 막대에 마우스를 올리면 세부 가중치를 볼 수
           있습니다.

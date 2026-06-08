@@ -521,7 +521,7 @@ async function deleteProject() {
         <ul class="actions">
           <li>
             <RouterLink :to="`/projects/${id}/recommendations`" class="btn"
-              >매칭 후보 보기</RouterLink
+              >추천 팀원 보기</RouterLink
             >
           </li>
           <li>

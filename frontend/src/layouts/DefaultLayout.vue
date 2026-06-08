@@ -24,6 +24,7 @@ async function onLogout() {
       <nav class="global-nav-inner" aria-label="primary">
         <RouterLink to="/" class="brand">UniTeam</RouterLink>
         <div class="nav-spacer" />
+        <RouterLink v-if="isAuthed" to="/recommend">추천 팀원</RouterLink>
         <RouterLink to="/projects">프로젝트</RouterLink>
         <RouterLink v-if="isAuthed" to="/evaluations">평가</RouterLink>
         <RouterLink v-if="isAuthed" to="/profile">프로필</RouterLink>

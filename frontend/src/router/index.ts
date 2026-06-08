@@ -28,6 +28,14 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
 
+  // 추천 팀원 허브 — 내 프로젝트별 추천 팀원 진입점
+  {
+    path: '/recommend',
+    name: 'recommend-hub',
+    component: () => import('../pages/projects/RecommendHub.vue'),
+    meta: { requiresAuth: true },
+  },
+
   // Projects (US2)
   {
     path: '/projects',
