@@ -39,6 +39,7 @@ interface UserCalcRow {
   trust_score: string;
   stars: string | null;
   evaluation_count: number | null;
+  ai_avg: string | null;
 }
 
 export async function recommend(projectId: number, limit = 10): Promise<CandidateOut[]> {
@@ -152,7 +153,8 @@ async function computeScored(
   const excludeClause = excludeIds.length > 0 ? `AND u.id NOT IN (${excludeIds.map(() => '?').join(',')})` : '';
   const [pool] = (await getPool().query(
     `SELECT u.id, u.name, u.department, u.grade, u.preferred_roles, u.collaboration_style, u.trust_score,
-            r.stars, r.evaluation_count
+            r.stars, r.evaluation_count,
+            (SELECT AVG(a.total) FROM ai_scores a WHERE a.user_id = u.id) AS ai_avg
        FROM users u
        LEFT JOIN ratings r ON r.user_id = u.id
        WHERE u.status = 'ACTIVE' AND u.role_user = 'STUDENT' ${excludeClause}
@@ -196,11 +198,13 @@ async function computeScored(
       diversityHint = teamDepts.has(cand.department) ? 40 : 80;
     }
 
+    const aiActivityScore = cand.ai_avg ? Number(cand.ai_avg) : 0;
     const wparts = scoreWeights({
       ratingStars,
       evaluationCount: evalCount,
       trustScore: trustScoreVal,
       diversityHint,
+      aiActivityScore,
     });
 
     const total = combine({
@@ -210,6 +214,7 @@ async function computeScored(
       rating: wparts.rating,
       trust: wparts.trust,
       diversity: wparts.diversity,
+      ai: wparts.ai,
       exposureBoost: wparts.exposureBoost,
     });
 
@@ -223,6 +228,7 @@ async function computeScored(
         rating: wparts.rating,
         trust: wparts.trust,
         diversity: wparts.diversity,
+        ai: wparts.ai,
       },
     });
   }

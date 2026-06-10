@@ -2,7 +2,11 @@ openapi: 3.0.3
 info:
   title: UniTeam Notification API
   version: 1.0.0
-  description: 알림 시스템 REST 계약 (002-notification-system)
+  description: >
+    알림 시스템 REST 계약 (002-notification-system).
+    모든 성공 응답은 공통 envelope `{ ok: true, data: <payload> }` 형태다.
+    오류는 RFC 7807 problem+json 으로 반환하며, `instance` 필드가 요청 추적용 requestId
+    (응답 헤더 `X-Request-Id` 와 동일)를 담는다.
 servers:
   - url: https://p18.sumzip.com/api/v1
     description: Production
@@ -20,40 +24,55 @@ paths:
           schema: { type: string, enum: [unread, read, archived, all], default: all }
         - name: cursor
           in: query
+          description: 이전 페이지 마지막 알림 id(문자열). 서버는 정수로 강제 변환한다.
           schema: { type: string }
         - name: limit
           in: query
           schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
       responses:
         '200':
-          description: 알림 목록
+          description: 알림 목록(envelope)
           content:
             application/json:
               schema:
                 type: object
+                required: [ok, data]
                 properties:
-                  items:
-                    type: array
-                    items: { $ref: '#/components/schemas/Notification' }
-                  nextCursor: { type: string, nullable: true }
-                  unreadCount: { type: integer }
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [items, nextCursor, unreadCount]
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Notification' }
+                      nextCursor: { type: string, nullable: true }
+                      unreadCount: { type: integer }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /notifications/unread-count:
     get:
       summary: 안읽음 개수(폴링용)
       responses:
         '200':
-          description: 안읽음 개수
+          description: 안읽음 개수(envelope)
           content:
             application/json:
               schema:
                 type: object
+                required: [ok, data]
                 properties:
-                  unreadCount: { type: integer }
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [unreadCount]
+                    properties:
+                      unreadCount: { type: integer }
         '401': { $ref: '#/components/responses/Unauthorized' }
   /notifications/{id}/read:
     post:
       summary: 개별 알림 읽음 처리(멱등)
+      description: 이미 읽은 알림을 다시 호출해도 200/동일 결과를 돌려준다(멱등).
       parameters:
         - name: id
           in: path
@@ -61,37 +80,56 @@ paths:
           schema: { type: string }
       responses:
         '200':
-          description: 처리된 알림
+          description: 처리된 알림(envelope)
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Notification' }
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data: { $ref: '#/components/schemas/Notification' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /notifications/read-all:
     post:
       summary: 전체 읽음 처리
       responses:
         '200':
-          description: 처리 결과
+          description: 처리 결과(envelope)
           content:
             application/json:
               schema:
                 type: object
+                required: [ok, data]
                 properties:
-                  updated: { type: integer }
+                  ok: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [updated]
+                    properties:
+                      updated: { type: integer }
         '401': { $ref: '#/components/responses/Unauthorized' }
   /notifications/preferences:
     get:
       summary: 수신 설정 조회
       responses:
         '200':
-          description: 종류별 채널 설정 + 전역 설정
+          description: 종류별 채널 설정 + 전역 설정(envelope)
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/PreferenceBundle' }
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data: { $ref: '#/components/schemas/PreferenceBundle' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     put:
       summary: 수신 설정 갱신
+      description: >
+        필수(mandatory) 종류를 인앱/이메일 off 로 비활성화하려 하면 422 VALIDATION_FAILED(FR-C3).
       requestBody:
         required: true
         content:
@@ -99,12 +137,17 @@ paths:
             schema: { $ref: '#/components/schemas/PreferenceBundle' }
       responses:
         '200':
-          description: 갱신된 설정
+          description: 갱신된 설정(envelope)
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/PreferenceBundle' }
-        '400': { $ref: '#/components/responses/BadRequest' }
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  data: { $ref: '#/components/schemas/PreferenceBundle' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
 components:
   securitySchemes:
     bearerAuth:
@@ -149,25 +192,31 @@ components:
           type: array
           items: { $ref: '#/components/schemas/ChannelPreference' }
         global: { $ref: '#/components/schemas/GlobalSettings' }
-    Error:
+    # RFC 7807 problem+json — middlewares/error.ts 가 생성하는 실제 오류 형태와 일치.
+    Problem:
       type: object
+      required: [type, title, status, code]
       properties:
-        requestId: { type: string }
-        code: { type: string }
-        message: { type: string }
+        type: { type: string, example: about:blank }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string, description: 도메인 오류 코드 }
+        detail: { type: string }
+        instance: { type: string, description: 요청 추적 id(requestId, X-Request-Id 헤더와 동일) }
+        details: { type: object, description: 검증 실패 시 zod flatten 등 추가 정보 }
   responses:
     Unauthorized:
-      description: 인증 필요
+      description: 인증 필요(UNAUTHORIZED)
       content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     NotFound:
-      description: 대상 없음(EC-06)
+      description: 대상 없음(NOT_FOUND, EC-06)
       content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-    BadRequest:
-      description: 잘못된 요청
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ValidationFailed:
+      description: 입력값 검증 실패(VALIDATION_FAILED) — 잘못된 파라미터 또는 필수 종류 비활성 시도(FR-C3)
       content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
