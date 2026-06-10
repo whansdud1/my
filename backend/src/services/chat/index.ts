@@ -1,5 +1,6 @@
 import { Errors } from '../../lib/envelope.js';
 import * as Members from '../../repositories/projectMembers.js';
+import * as Projects from '../../repositories/projects.js';
 import * as Messages from '../../repositories/projectMessages.js';
 import * as Reads from '../../repositories/messageReads.js';
 import * as Attachments from '../../repositories/messageAttachments.js';
@@ -41,9 +42,14 @@ function attachmentDto(projectId: number, a: Attachments.AttachmentRow): Attachm
   };
 }
 
-// ACCEPTED 멤버인지 확인. 아니면 403.
+// 채팅 가능 조건: ① 프로젝트가 시작됨(RECRUIT 이 아님) + ② ACCEPTED 멤버. 아니면 403.
 export async function assertMember(projectId: number, userId: number): Promise<void> {
   if (!Number.isFinite(projectId)) throw Errors.Validation('잘못된 프로젝트 id');
+  const project = await Projects.findById(projectId);
+  if (!project) throw Errors.NotFound();
+  if (project.status === 'RECRUIT') {
+    throw Errors.Forbidden('프로젝트가 시작된 후에 팀 채팅을 사용할 수 있습니다');
+  }
   const member = await Members.findOne(projectId, userId);
   if (!member || member.state !== 'ACCEPTED') {
     throw Errors.Forbidden('이 프로젝트의 팀원만 채팅에 참여할 수 있습니다');

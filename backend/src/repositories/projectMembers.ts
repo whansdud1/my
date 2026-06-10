@@ -76,13 +76,14 @@ export async function findProjectsByUser(
     title: string;
     status: 'RECRUIT' | 'RUNNING' | 'CLOSED' | 'ARCHIVED';
     ends_at: Date | null;
+    recruit_closed_at: Date | null;
     role: string;
     state: MemberState;
     created_at: Date;
   }>
 > {
   const [rows] = (await getPool().query(
-    `SELECT pm.project_id, p.title, p.status, p.ends_at, pm.role, pm.state, pm.created_at
+    `SELECT pm.project_id, p.title, p.status, p.ends_at, p.recruit_closed_at, pm.role, pm.state, pm.created_at
        FROM project_members pm
        JOIN projects p ON p.id = pm.project_id
       WHERE pm.user_id = ? AND pm.state IN ('APPLIED','ACCEPTED','INVITED')
@@ -94,6 +95,7 @@ export async function findProjectsByUser(
       title: string;
       status: 'RECRUIT' | 'RUNNING' | 'CLOSED' | 'ARCHIVED';
       ends_at: Date | null;
+      recruit_closed_at: Date | null;
       role: string;
       state: MemberState;
       created_at: Date;

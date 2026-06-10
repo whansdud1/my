@@ -7,6 +7,7 @@ export const PROJECT_ROLES = [
   '디자인',
   '자료 조사',
   '문서 작성',
+  '기타',
 ] as const;
 
 export type ProjectRole = (typeof PROJECT_ROLES)[number];
