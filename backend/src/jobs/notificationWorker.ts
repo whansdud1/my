@@ -2,6 +2,7 @@ import { logger } from '../lib/logger.js';
 import * as repo from '../repositories/notifications.js';
 import { getChannel, lookupRecipientEmail } from '../services/notification/channels.js';
 import { getSettings } from '../repositories/notifications.js';
+import { logMetrics } from '../services/notification/metrics.js';
 
 // 002-notification-system — T032/T033/T034
 // outbox 폴링 → 채널 전송 → 재시도(지수 백오프) / quiet hours 이연 / 실패 확정.
@@ -14,8 +15,11 @@ const MAX_ATTEMPTS = 4;
 // 지수 백오프(ms): 30s, 2m, 10m, 30m
 const BACKOFF_MS = [30_000, 120_000, 600_000, 1_800_000];
 
+const METRICS_INTERVAL_MS = Number.parseInt(process.env.NOTIF_METRICS_INTERVAL_MS ?? '3600000', 10);
+
 let timer: NodeJS.Timeout | null = null;
 let archiveTimer: NodeJS.Timeout | null = null;
+let metricsTimer: NodeJS.Timeout | null = null;
 let running = false;
 
 // quiet hours 판정 — critical 이 아니고 email/push 이며 야간/DND면 true(이연)
@@ -46,7 +50,8 @@ function nextQuietEnd(settings: repo.SettingsRow): Date {
   return next;
 }
 
-async function processOne(item: repo.OutboxRow): Promise<void> {
+// export: outbox 한 건 처리. tick() 내부 사용 + 통합 테스트(T030)에서 직접 구동.
+export async function processOne(item: repo.OutboxRow): Promise<void> {
   const notification = await repo.findById(item.notification_id);
   if (!notification) {
     await repo.markOutboxFailed(item.id, 'notification not found');
@@ -119,12 +124,15 @@ export function startNotificationWorker(): void {
   if (timer) return;
   timer = setInterval(() => void tick(), INTERVAL_MS);
   archiveTimer = setInterval(() => void archiveTick(), 60 * 60_000); // 1시간마다 보관
-  logger.info({ intervalMs: INTERVAL_MS, archiveDays: ARCHIVE_DAYS }, 'notificationWorker 시작');
+  metricsTimer = setInterval(() => void logMetrics(60), METRICS_INTERVAL_MS); // 운영 지표 집계 로깅(T037)
+  logger.info({ intervalMs: INTERVAL_MS, archiveDays: ARCHIVE_DAYS, metricsMs: METRICS_INTERVAL_MS }, 'notificationWorker 시작');
 }
 
 export function stopNotificationWorker(): void {
   if (timer) clearInterval(timer);
   if (archiveTimer) clearInterval(archiveTimer);
+  if (metricsTimer) clearInterval(metricsTimer);
   timer = null;
   archiveTimer = null;
+  metricsTimer = null;
 }

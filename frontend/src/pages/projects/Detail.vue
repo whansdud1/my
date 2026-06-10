@@ -527,6 +527,12 @@ async function deleteProject() {
           <li>
             <RouterLink :to="`/projects/${id}/schedule`" class="btn">일정 조율</RouterLink>
           </li>
+          <li>
+            <RouterLink :to="`/projects/${id}/tasks`" class="btn">업무 관리</RouterLink>
+          </li>
+          <li>
+            <RouterLink :to="`/projects/${id}/dashboard`" class="btn">팀 대시보드</RouterLink>
+          </li>
         </ul>
       </div>
     </div>
