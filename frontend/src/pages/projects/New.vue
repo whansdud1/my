@@ -38,6 +38,17 @@ function toggleRole(r: string) {
   else roleCounts[r] = 1;
 }
 
+// 날짜 입력: 필드 아무 곳이나 누르면 네이티브 달력이 바로 열리게 한다.
+// (Safari 등 브라우저별로 아이콘 클릭이 필요한 편차를 없애기 위함)
+function openDatePicker(e: Event) {
+  const el = e.currentTarget as HTMLInputElement & { showPicker?: () => void };
+  try {
+    el.showPicker?.();
+  } catch {
+    /* 사용자 제스처 밖 호출/미지원 시 기본 동작에 맡김 */
+  }
+}
+
 function setCount(r: string, v: number) {
   roleCounts[r] = Math.max(1, Math.floor(Number(v) || 1));
 }
@@ -97,11 +108,25 @@ async function submit() {
         </label>
         <label>
           <span>시작일</span>
-          <input class="input" type="date" v-model="form.startDate" required />
+          <input
+            class="input"
+            type="date"
+            v-model="form.startDate"
+            required
+            @click="openDatePicker"
+            @focus="openDatePicker"
+          />
         </label>
         <label>
           <span>종료일</span>
-          <input class="input" type="date" v-model="form.endDate" required />
+          <input
+            class="input"
+            type="date"
+            v-model="form.endDate"
+            required
+            @click="openDatePicker"
+            @focus="openDatePicker"
+          />
         </label>
       </div>
 
