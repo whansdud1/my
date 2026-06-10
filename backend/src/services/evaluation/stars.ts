@@ -12,6 +12,9 @@ import { getPool } from '../../db/connection.js';
 import { audit } from '../audit.js';
 import * as Projects from '../../repositories/projects.js';
 import * as PeerRatings from '../../repositories/peerRatings.js';
+import * as ModFlags from '../../repositories/moderationFlags.js';
+import { analyzeText } from '../moderation/textModeration.js';
+import { detectRatingAnomaly } from '../moderation/ratingAnomaly.js';
 
 export interface StarItem {
   rateeId: number;
@@ -48,13 +51,72 @@ export async function submitStarRatings(input: SubmitStarsInput): Promise<{ save
     throw Errors.Forbidden('해당 프로젝트의 팀원만 평가할 수 있습니다');
   }
 
+  // 1차: 명백한 악성 코멘트가 하나라도 있으면 제출 전체를 거부(아무것도 저장 안 함).
+  //      → 작성자가 수정해 다시 제출하도록 유도(차단). 의심 항목은 통과시켜 검토 큐로.
+  const analyzed = new Map<number, Awaited<ReturnType<typeof analyzeText>>>();
+  for (const it of input.items) {
+    if (it.rateeId === input.raterId || !acceptedIds.has(it.rateeId)) continue;
+    const comment = it.comment?.trim().slice(0, 500) || null;
+    const result = await analyzeText(comment);
+    analyzed.set(it.rateeId, result);
+    if (result.verdict === 'block') {
+      throw Errors.Validation(
+        '부적절한 표현(욕설·인격모독 등)이 감지되어 제출할 수 없습니다. 내용을 수정해 다시 제출해 주세요.',
+      );
+    }
+  }
+
   const affected = new Set<number>();
   for (const it of input.items) {
     if (it.rateeId === input.raterId) continue; // 자기 평가 금지
     if (!acceptedIds.has(it.rateeId)) continue; // 외부/비팀원 차단
     const stars = normalizeStars(it.stars);
     const comment = it.comment?.trim().slice(0, 500) || null;
-    await PeerRatings.upsert(input.projectId, input.raterId, it.rateeId, stars, comment);
+    const text = analyzed.get(it.rateeId);
+
+    // 텍스트 검토 필요 시 비노출(pending)로 저장
+    const modState = text && text.verdict === 'review' ? 'pending' : 'approved';
+    await PeerRatings.upsert(input.projectId, input.raterId, it.rateeId, stars, comment, {
+      state: modState,
+      reason: text && text.reasons.length ? text.reasons.join(' | ').slice(0, 255) : null,
+      score: text ? text.score : null,
+    });
+    const ratingId = await PeerRatings.findId(input.projectId, input.raterId, it.rateeId);
+
+    // 텍스트 악성 검토 큐
+    if (text && text.verdict === 'review' && ratingId) {
+      await ModFlags.insertFlag({
+        targetType: 'peer_rating',
+        targetId: ratingId,
+        projectId: input.projectId,
+        raterId: input.raterId,
+        rateeId: it.rateeId,
+        kind: 'TOXIC_TEXT',
+        severity: text.severity === 'severe' ? 'high' : 'medium',
+        score: text.score,
+        snippet: comment,
+        detail: { categories: text.categories, reasons: text.reasons, source: text.source },
+      });
+    }
+
+    // 허위/보복성 별점 탐지(합의 대비 이상치) → 검토 큐(차단은 안 함, 별점은 유지)
+    const peers = await PeerRatings.peerStatForRatee(input.projectId, it.rateeId, input.raterId);
+    const anomaly = detectRatingAnomaly(stars, peers);
+    if (anomaly.anomalous && ratingId) {
+      await ModFlags.insertFlag({
+        targetType: 'peer_rating',
+        targetId: ratingId,
+        projectId: input.projectId,
+        raterId: input.raterId,
+        rateeId: it.rateeId,
+        kind: 'RATING_ANOMALY',
+        severity: anomaly.severity,
+        score: anomaly.score,
+        snippet: comment,
+        detail: { stars, peerAvg: anomaly.peerAvg, peerCount: anomaly.peerCount, reason: anomaly.reason },
+      });
+    }
+
     affected.add(it.rateeId);
   }
 
