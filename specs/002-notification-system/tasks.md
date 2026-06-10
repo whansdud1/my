@@ -42,8 +42,8 @@
 **독립 테스트**: 매칭 완료 이벤트 모의 발생 → 목록에 unread 1건 → 읽음 처리 시 read 전환, unreadCount 0.
 
 ### 테스트 (먼저)
-- [ ] **T010** [P] [US1] `backend/tests/contract/notifications.list.test.ts` — GET /notifications, /unread-count 계약 테스트
-- [ ] **T011** [P] [US1] `backend/tests/contract/notifications.read.test.ts` — POST /{id}/read, /read-all 계약(멱등 포함)
+- [X] **T010** [P] [US1] `backend/tests/contract/notifications.list.test.ts` — GET /notifications, /unread-count 계약 테스트
+- [X] **T011** [P] [US1] `backend/tests/contract/notifications.read.test.ts` — POST /{id}/read, /read-all 계약(멱등 포함)
 
 ### 구현
 - [X] **T012** [US1] `backend/src/services/notification/notificationService.ts` — `create(event)` 인앱 알림 생성 + outbox(in_app) 적재
@@ -55,7 +55,7 @@
 - [X] **T018** [US1] `frontend/src/components/NotificationBell.vue` — 안읽음 배지
 - [X] **T019** [US1] `frontend/src/components/NotificationList.vue` — 목록·안읽음 필터·개별/전체 읽음·deep link 이동(EC-06 삭제 대상 안내)
 - [X] **T020** [US1] 001 매칭 모듈에서 `notificationEvents.emit('MATCH_READY', …)` 연결 (이벤트 소스는 채널을 모름)
-- [ ] **T021** [P] [US1] `frontend/tests/unit/notificationStore.spec.ts` — 폴링·읽음 상태 전이 Vitest
+- [X] **T021** [P] [US1] `frontend/tests/unit/notificationStore.spec.ts` — 폴링·읽음 상태 전이 Vitest
 
 **Checkpoint**: US1만으로 인앱 알림 수신→읽음 전 흐름 동작. **= 배포 가능한 MVP.**
 
@@ -67,7 +67,7 @@
 **독립 테스트**: SCHEDULE_CHANGE 이메일 off 저장 → 해당 이벤트 시 이메일 미발송·인앱만; 필수 종류(SECURITY_ALERT)는 off 불가.
 
 ### 테스트 (먼저)
-- [ ] **T022** [P] [US2] `backend/tests/contract/notifications.preferences.test.ts` — GET/PUT /preferences 계약 + 필수 종류 비활성 거부
+- [X] **T022** [P] [US2] `backend/tests/contract/notifications.preferences.test.ts` — GET/PUT /preferences 계약 + 필수 종류 비활성 거부
 
 ### 구현
 - [X] **T023** [US2] `backend/src/services/notification/preferenceService.ts` — 설정 조회/갱신, 행 부재 시 type 기본값 적용, is_mandatory 강제(FR-C3)
@@ -76,7 +76,7 @@
 - [X] **T026** [US2] `backend/src/services/notification/channels/emailChannel.ts` — 외부 메일 SaaS 어댑터(인터페이스 뒤), 연락처 유효성 검사(EC-07)
 - [X] **T027** [P] [US2] `frontend/src/pages/NotificationSettings.vue` — 종류×채널 토글 + 즉시 저장(FR-C4)
 - [X] **T028** [P] [US2] `frontend/src/services/notificationApi.ts`에 preferences get/put 추가
-- [ ] **T029** [P] [US2] `backend/tests/unit/preferenceService.test.ts` — 기본값·필수 강제 단위 테스트
+- [X] **T029** [P] [US2] `backend/tests/unit/preferenceService.test.ts` — 기본값·필수 강제 단위 테스트
 
 **Checkpoint**: US1 + US2. 설정 기반 멀티채널(인앱+이메일) 동작. 푸시는 스텁(WA-01).
 
@@ -88,7 +88,7 @@
 **독립 테스트**: 동일 이벤트 5분 내 2회 → 알림 1건(group_count 증가); 이메일 1회 실패 후 재시도 성공; 야간엔 비긴급 이메일 보류, 긴급 즉시.
 
 ### 테스트 (먼저)
-- [ ] **T030** [P] [US3] `backend/tests/integration/notificationWorker.test.ts` — 재시도 백오프·quiet hours·dedup 통합 테스트
+- [X] **T030** [P] [US3] `backend/tests/integration/notificationWorker.test.ts` — 재시도 백오프·quiet hours·dedup 통합 테스트
 
 ### 구현
 - [X] **T031** [US3] notificationService dedup — `dedupKey=hash(recipient+type+targetRef+5분버킷)`, 기존 unread면 group_count·시각 갱신(FR-E1/SC-05)
@@ -104,10 +104,13 @@
 
 ## Phase 6: Polish & Cross-Cutting
 
-- [ ] **T037** [P] delivery_logs 기반 운영 지표(전송 지연·실패율) 측정 로깅 + SC-01/02/05 검증 쿼리
-- [ ] **T038** [P] `frontend/tests/e2e/notification.e2e.ts` — 이벤트→수신→읽음→설정 반영 E2E(Playwright)
-- [ ] **T039** [P] OpenAPI 문서 `/api/v1` 통합 및 에러 응답(requestId) 일관성 점검
-- [ ] **T040** quickstart.md 절차 실측 검증 및 보정
+- [X] **T037** [P] delivery_logs 기반 운영 지표(전송 지연·실패율) 측정 로깅 + SC-01/02/05 검증 쿼리 — `src/services/notification/metrics.ts`(워커 1시간 주기) + `metrics-queries.sql`
+- [X] **T038** [P] `frontend/tests/e2e/notification.e2e.ts` — 이벤트→수신→읽음→설정 반영 E2E(Playwright)
+  - ✅ Playwright 도입(`@playwright/test`, `playwright.config.ts`, `npm run test:e2e`). FE(9518)만 기동하고
+    `/api/v1/*` 를 상태 보존형 라우트 모킹으로 가짜 백엔드처럼 응답해 DB·BE 동시 기동 없이 실행/검증 가능.
+    4개 시나리오 통과: 수신 배지 / 개별 읽음→배지 감소 / 전체 읽음→배지 제거 / 채널 토글·저장→재진입 유지.
+- [X] **T039** [P] OpenAPI 문서 `/api/v1` 통합 및 에러 응답(requestId) 일관성 점검
+- [X] **T040** quickstart.md 절차 실측 검증 및 보정
 
 ---
 
