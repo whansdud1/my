@@ -9,6 +9,7 @@ const auth = useAuthStore();
 const notify = useNotificationsStore();
 const router = useRouter();
 const isAuthed = computed(() => !!auth.accessToken);
+const isAdmin = computed(() => auth.user?.role === 'ADMIN');
 
 async function onLogout() {
   await auth.logout();
@@ -28,6 +29,7 @@ async function onLogout() {
         <RouterLink to="/projects">프로젝트</RouterLink>
         <RouterLink v-if="isAuthed" to="/evaluations">평가</RouterLink>
         <RouterLink v-if="isAuthed" to="/profile">프로필</RouterLink>
+        <RouterLink v-if="isAdmin" to="/admin/moderation">검토</RouterLink>
         <NotificationBell v-if="isAuthed" />
         <RouterLink v-if="!isAuthed" to="/login">로그인</RouterLink>
         <button v-else class="nav-logout" @click="onLogout()">로그아웃</button>

@@ -102,6 +102,14 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
 
+  // 관리자 — 평가 리뷰 악성 탐지 검토 큐 (US8)
+  {
+    path: '/admin/moderation',
+    name: 'admin-moderation',
+    component: () => import('../pages/admin/Moderation.vue'),
+    meta: { requiresAuth: true, role: 'ADMIN' },
+  },
+
   // 404 fallback
   { path: '/:pathMatch(.*)*', component: () => import('../pages/NotFound.vue') },
 ];
@@ -123,6 +131,11 @@ router.beforeEach((to) => {
 
   if (to.meta.requiresAuth && !auth.accessToken) {
     return { name: 'login', query: { redirect: to.fullPath } };
+  }
+
+  // 관리자 전용 경로 가드(서버에서도 ADMIN 강제)
+  if (to.meta.role === 'ADMIN' && auth.user?.role !== 'ADMIN') {
+    return { name: 'projects' };
   }
 
   return true;

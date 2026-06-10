@@ -72,6 +72,18 @@ export const config = {
 
   oauthRedirectBase:
     process.env.OAUTH_REDIRECT_BASE ?? 'https://p18.sumzip.com/api/v1/integrations',
+
+  // 평가 리뷰 악성 탐지(하이브리드: 규칙기반 항상 + LLM 2차 판정은 키 있을 때만)
+  moderation: {
+    // LLM 2차 판정 사용 여부. true 이고 ANTHROPIC_API_KEY 가 있을 때만 Claude 호출.
+    llmEnabled: bool('MODERATION_LLM_ENABLED', false),
+    llmModel: process.env.MODERATION_LLM_MODEL ?? 'claude-opus-4-8',
+    hasApiKey: Boolean(process.env.ANTHROPIC_API_KEY),
+    // 허위/보복성 별점 탐지: 다른 평가자 평균 대비 이 값 이상 낮으면 의심(검토 큐).
+    anomalyDeltaThreshold: Number(process.env.MODERATION_ANOMALY_DELTA ?? '2.0'),
+    // 합의(다른 평가자) 최소 인원 — 이보다 적으면 이상치 판단 보류.
+    anomalyMinPeers: int('MODERATION_ANOMALY_MIN_PEERS', 2),
+  },
 } as const;
 
 // 운영 환경에서 dev secret 사용 방지
