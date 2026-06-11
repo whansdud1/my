@@ -19,7 +19,9 @@ import { notificationsRouter } from './routes/notifications.js';
 import { scheduleRouter } from './routes/schedule.js';
 import { tasksRouter } from './routes/tasks.js';
 import { dashboardRouter } from './routes/dashboard.js';
+import { subscriptionRouter } from './routes/subscription.js';
 import { adminRouter } from './routes/admin.js';
+import { brandingRouter } from './routes/branding.js';
 
 export function createApp(): Express {
   const app = express();
@@ -57,6 +59,10 @@ export function createApp(): Express {
   app.use('/api/v1', scheduleRouter);
   app.use('/api/v1', tasksRouter);
   app.use('/api/v1', dashboardRouter);
+  app.use('/api/v1', subscriptionRouter);
+  // brandingRouter 는 adminRouter 보다 먼저 — adminRouter 의 전역 requireAuth 가
+  // 공개 GET /branding/login 까지 가로채지 않도록 한다.
+  app.use('/api/v1', brandingRouter);
   app.use('/api/v1', adminRouter);
 
   // 루트는 운영에서는 Nginx가 frontend로 라우팅 — 백엔드 단독 호출 시 단순 응답

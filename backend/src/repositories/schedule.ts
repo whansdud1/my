@@ -5,7 +5,6 @@ import { getPool } from '../db/connection.js';
 export type EventType = 'MEETING' | 'DEADLINE' | 'MILESTONE';
 export type EventStatus = 'SCHEDULED' | 'CANCELLED';
 export type RsvpResponse = 'ATTEND' | 'DECLINE' | 'PENDING';
-export type SyncState = 'ACTIVE' | 'EXPIRED' | 'DISCONNECTED';
 
 export interface ScheduleEventRow {
   id: number;
@@ -186,62 +185,4 @@ export async function dueReminders(now: Date): Promise<ScheduleEventRow[]> {
 
 export async function markReminderSent(id: number): Promise<void> {
   await getPool().query(`UPDATE schedule_events SET reminder_sent_at = NOW(3) WHERE id = ?`, [id]);
-}
-
-// --- calendar connection ---
-export interface ConnRow {
-  user_id: number;
-  provider: string;
-  sync_state: SyncState;
-  expires_at: Date | null;
-  connected_at: Date;
-}
-
-export async function getConnection(userId: number): Promise<ConnRow | null> {
-  const [rows] = (await getPool().query(
-    `SELECT user_id, provider, sync_state, expires_at, connected_at FROM calendar_connections WHERE user_id = ? LIMIT 1`,
-    [userId],
-  )) as unknown as [ConnRow[]];
-  return rows[0] ?? null;
-}
-
-export async function upsertConnection(userId: number, expiresAt: Date | null): Promise<void> {
-  await getPool().query(
-    `INSERT INTO calendar_connections (user_id, provider, sync_state, expires_at)
-     VALUES (?, 'GOOGLE', 'ACTIVE', ?)
-     ON DUPLICATE KEY UPDATE sync_state = 'ACTIVE', expires_at = VALUES(expires_at), connected_at = NOW(3)`,
-    [userId, expiresAt],
-  );
-}
-
-export async function setConnectionState(userId: number, state: SyncState): Promise<void> {
-  await getPool().query(`UPDATE calendar_connections SET sync_state = ? WHERE user_id = ?`, [state, userId]);
-}
-
-export async function activeConnectionUserIds(userIds: number[]): Promise<number[]> {
-  if (!userIds.length) return [];
-  const ph = userIds.map(() => '?').join(',');
-  const [rows] = (await getPool().query(
-    `SELECT user_id FROM calendar_connections WHERE sync_state = 'ACTIVE' AND user_id IN (${ph})`,
-    userIds,
-  )) as unknown as [Array<{ user_id: number }>];
-  return rows.map((r) => r.user_id);
-}
-
-// --- sync map ---
-export async function upsertSyncMap(eventId: number, userId: number, externalEventId: string): Promise<void> {
-  await getPool().query(
-    `INSERT INTO calendar_sync_map (schedule_event_id, user_id, external_event_id)
-     VALUES (?, ?, ?)
-     ON DUPLICATE KEY UPDATE external_event_id = VALUES(external_event_id), last_synced_at = NOW(3)`,
-    [eventId, userId, externalEventId],
-  );
-}
-
-export async function getSyncMaps(eventId: number): Promise<Array<{ user_id: number; external_event_id: string }>> {
-  const [rows] = (await getPool().query(
-    `SELECT user_id, external_event_id FROM calendar_sync_map WHERE schedule_event_id = ?`,
-    [eventId],
-  )) as unknown as [Array<{ user_id: number; external_event_id: string }>];
-  return rows;
 }

@@ -13,6 +13,7 @@ import * as Invites from '../services/projects/invites.js';
 import * as Chat from '../services/chat/index.js';
 import { recommend, recommendByRole } from '../services/matching/index.js';
 import { composeTeam } from '../services/matching/compose.js';
+import { isPremium } from '../services/subscription/index.js';
 import { audit } from '../services/audit.js';
 
 export const projectsRouter = Router();
@@ -408,14 +409,23 @@ projectsRouter.post(
         throw Errors.Conflict(msg);
       }
 
-      // 역할 잔여 슬롯 확인
+      // 역할/정원 마감 여부 계산
       const acceptedCounts = await Members.acceptedRoleCounts(projectId);
       const filled = acceptedCounts[role] ?? 0;
-      if (reqRole.count - filled <= 0) throw Errors.Conflict('해당 역할은 이미 마감되었습니다');
-
-      // 팀 정원 확인
+      const roleFull = reqRole.count - filled <= 0;
       const acceptedTotal = await Members.countAcceptedByProject(projectId);
-      if (acceptedTotal >= project.target_size) throw Errors.Conflict('팀 정원이 가득 찼습니다');
+      const teamFull = acceptedTotal >= project.target_size;
+
+      // 정원 초과(역할/팀 마감) 시: 무료는 차단, 프리미엄은 '대기열'로 지원 허용(우선 매칭).
+      const waitlisted = roleFull || teamFull;
+      if (waitlisted) {
+        const premium = await isPremium(userId);
+        if (!premium) {
+          throw Errors.Conflict(
+            roleFull ? '해당 역할은 이미 마감되었습니다' : '팀 정원이 가득 찼습니다',
+          );
+        }
+      }
 
       const memberId = await Members.apply(projectId, userId, role);
       await audit({
@@ -423,9 +433,9 @@ projectsRouter.post(
         action: 'PROJECT_APPLY',
         targetType: 'project',
         targetId: projectId,
-        meta: { role },
+        meta: { role, waitlisted },
       });
-      res.status(201).json(ok({ memberId: String(memberId), role, state: 'APPLIED' }));
+      res.status(201).json(ok({ memberId: String(memberId), role, state: 'APPLIED', waitlisted }));
     } catch (e) {
       next(e);
     }
@@ -453,6 +463,7 @@ projectsRouter.get(
             name: r.name ?? '익명',
             role: r.role,
             appliedAt: r.created_at?.toISOString() ?? null,
+            premium: !!r.is_premium, // 프리미엄 우선 매칭 — 상위 정렬됨
           })),
         ),
       );

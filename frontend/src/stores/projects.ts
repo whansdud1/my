@@ -13,6 +13,7 @@ export interface Applicant {
   name: string;
   role: string;
   appliedAt: string | null;
+  premium?: boolean; // 프리미엄 구독자 — 우선 매칭(상위 정렬)
 }
 
 export interface MyProject {

@@ -5,6 +5,32 @@ import * as Messages from '../../repositories/projectMessages.js';
 import * as Reads from '../../repositories/messageReads.js';
 import * as Attachments from '../../repositories/messageAttachments.js';
 import { emitToProject } from '../../realtime/io.js';
+import { notify } from '../notification/index.js';
+
+// 새 메시지 알림 본문 길이 제한(미리보기) — notifications.body 컬럼 한도 내로.
+const PREVIEW_LEN = 60;
+
+// 팀 채팅 새 메시지를 팀원(발신자 제외)에게 알림으로 발행.
+// 같은 채팅방의 메시지는 dedupKey(targetRef=chat:<projectId>)로 5분 버킷 묶음 처리되어
+// 메시지가 쏟아져도 알림 한 건으로 그룹핑된다(group_count++).
+function notifyNewMessage(projectId: number, sender: ChatMessageDto): void {
+  const text = sender.body.trim();
+  const preview = text
+    ? text.length > PREVIEW_LEN
+      ? `${text.slice(0, PREVIEW_LEN)}…`
+      : text
+    : sender.attachments?.length
+      ? '사진/파일을 보냈습니다'
+      : '';
+  notify('CHAT_MESSAGE', {
+    projectId,
+    excludeUserId: Number(sender.userId),
+    title: `${sender.name}님의 새 메시지`,
+    body: preview,
+    deepLink: `/projects/${projectId}`,
+    targetRef: `chat:${projectId}`,
+  });
+}
 
 // 팀 채팅 도메인 로직 — socket 핸들러와 REST 라우트가 공유한다.
 // 권한: project_members.state = 'ACCEPTED' 인 멤버(=팀장 포함)만 읽기/쓰기 가능.
@@ -86,6 +112,7 @@ export async function postMessage(
   const dto = toDto(row);
   if (clientId) dto.clientId = clientId;
   emitToProject(projectId, 'message:new', dto);
+  notifyNewMessage(projectId, dto);
   return dto;
 }
 
@@ -112,6 +139,7 @@ export async function postMessageWithAttachments(
   );
   if (clientId) dto.clientId = clientId;
   emitToProject(projectId, 'message:new', dto);
+  notifyNewMessage(projectId, dto);
   return dto;
 }
 

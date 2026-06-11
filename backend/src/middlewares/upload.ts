@@ -16,6 +16,10 @@ export const uploadsRoot = path.isAbsolute(config.uploads.dir)
 const chatDir = path.join(uploadsRoot, 'chat');
 mkdirSync(chatDir, { recursive: true });
 
+// 로그인 화면 브랜딩 이미지 저장 디렉터리(관리자 전용 업로드).
+const brandingDir = path.join(uploadsRoot, 'branding');
+mkdirSync(brandingDir, { recursive: true });
+
 // 안전한 확장자만 보존(경로 조작 방지). 알 수 없으면 확장자 없이 저장.
 function safeExt(originalName: string): string {
   const ext = path.extname(originalName).toLowerCase();
@@ -45,6 +49,62 @@ export const chatUpload = multer({
     cb(null, true);
   },
 });
+
+// --- 로그인 화면 브랜딩 이미지 업로드 ---
+// 관리자만 사용. 단일 이미지 파일(최대 8MB)만 허용한다.
+const BRANDING_MAX_BYTES = 8 * 1024 * 1024;
+
+const brandingStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, brandingDir),
+  filename: (_req, file, cb) => cb(null, `${nanoid(20)}${safeExt(file.originalname)}`),
+});
+
+const brandingUpload = multer({
+  storage: brandingStorage,
+  // 히어로(image) + 하단(darkImage) 두 필드를 한 번에 받을 수 있게 최대 2개 허용(필드별 1개).
+  limits: { fileSize: BRANDING_MAX_BYTES, files: 2 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) {
+      cb(Errors.Validation('이미지 파일만 업로드할 수 있습니다'));
+      return;
+    }
+    cb(null, true);
+  },
+});
+
+// multer 의 브랜딩 업로드 에러(용량 초과 등)를 도메인 에러로 변환하는 공통 래퍼.
+function wrapBrandingHandler(
+  handler: (req: unknown, res: unknown, cb: (err?: unknown) => void) => void,
+) {
+  return (req: unknown, res: unknown, next: (e?: unknown) => void) => {
+    handler(req, res, (err: unknown) => {
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          const mb = Math.round(BRANDING_MAX_BYTES / (1024 * 1024));
+          return next(Errors.Validation(`이미지가 너무 큽니다(최대 ${mb}MB)`));
+        }
+        return next(Errors.Validation(`업로드 오류: ${err.message}`));
+      }
+      next(err);
+    });
+  };
+}
+
+// 단일 브랜딩 이미지 업로드.
+export function brandingUploadSingle(field: string) {
+  return wrapBrandingHandler(
+    brandingUpload.single(field) as Parameters<typeof wrapBrandingHandler>[0],
+  );
+}
+
+// 여러 브랜딩 이미지 필드 업로드(예: 히어로 image + 하단 darkImage). 각 필드 최대 1개.
+export function brandingUploadFields(fields: { name: string; maxCount?: number }[]) {
+  return wrapBrandingHandler(
+    brandingUpload.fields(fields.map((f) => ({ name: f.name, maxCount: f.maxCount ?? 1 }))) as Parameters<
+      typeof wrapBrandingHandler
+    >[0],
+  );
+}
 
 // multer 의 에러(용량 초과 등)를 도메인 에러로 변환하는 래퍼.
 export function chatUploadArray(field: string) {

@@ -14,6 +14,7 @@ const TYPES: Array<{ code: string; priority: Priority; audience: Audience; manda
   { code: 'EVAL_REQUEST', priority: 'NORMAL', audience: 'INDIVIDUAL', mandatory: false },
   { code: 'EVAL_REMINDER', priority: 'NORMAL', audience: 'INDIVIDUAL', mandatory: false },
   { code: 'SCHEDULE_CHANGE', priority: 'INFO', audience: 'TEAM', mandatory: false },
+  { code: 'CHAT_MESSAGE', priority: 'NORMAL', audience: 'TEAM', mandatory: false }, // 팀 채팅 새 메시지(발신자 제외)
   { code: 'TASK_ASSIGNED', priority: 'NORMAL', audience: 'INDIVIDUAL', mandatory: false },
   { code: 'ADMIN_REVIEW', priority: 'NORMAL', audience: 'ADMIN', mandatory: false },
   { code: 'SECURITY_ALERT', priority: 'CRITICAL', audience: 'INDIVIDUAL', mandatory: true },

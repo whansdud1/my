@@ -6,6 +6,8 @@ import { closePool } from './db/connection.js';
 import { registerNotificationHandlers } from './services/notification/index.js';
 import { startNotificationWorker, stopNotificationWorker } from './jobs/notificationWorker.js';
 import { startScheduleReminderWorker, stopScheduleReminderWorker } from './jobs/scheduleReminderWorker.js';
+import { startCollabRiskWorker, stopCollabRiskWorker } from './jobs/collabRiskWorker.js';
+import { startSubscriptionWorker, stopSubscriptionWorker } from './jobs/subscriptionWorker.js';
 import { initRealtime } from './realtime/index.js';
 
 const app = createApp();
@@ -19,6 +21,10 @@ registerNotificationHandlers();
 startNotificationWorker();
 // 003-schedule-coordination — 리마인더 워커 기동
 startScheduleReminderWorker();
+// 팀 갈등(협업) 위험 예측 워커 기동
+startCollabRiskWorker();
+// 프리미엄 구독 자동 갱신/만료 워커 기동
+startSubscriptionWorker();
 
 const server = httpServer.listen(config.port, () => {
   logger.info(
@@ -32,6 +38,8 @@ const shutdown = (signal: string) => {
   logger.info({ signal }, 'shutdown initiated');
   stopNotificationWorker();
   stopScheduleReminderWorker();
+  stopCollabRiskWorker();
+  stopSubscriptionWorker();
   server.close(async (err) => {
     if (err) logger.error({ err }, 'server.close error');
     await closePool().catch((e) => logger.error({ err: e }, 'pool close error'));

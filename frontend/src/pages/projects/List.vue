@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, computed } from 'vue';
 import { useProjectStore } from '../../stores/projects';
 import { RouterLink } from 'vue-router';
 
@@ -14,13 +14,33 @@ const tabs: Array<{ key: Tab; label: string }> = [
 ];
 const activeTab = ref<Tab>('RECRUIT');
 
+// 검색어(제목·설명 검색) — 현재 탭 안에서 적용된다.
+const q = ref('');
+const searching = computed(() => q.value.trim().length > 0);
+
+function load() {
+  store.fetchList({ status: activeTab.value, q: q.value.trim() || undefined });
+}
+
 function selectTab(tab: Tab) {
   if (activeTab.value === tab) return;
   activeTab.value = tab;
-  store.fetchList({ status: tab });
+  load();
 }
 
-onMounted(() => store.fetchList({ status: activeTab.value }));
+// 입력 중 가벼운 디바운스로 자동 검색
+let debounce: ReturnType<typeof setTimeout> | null = null;
+function onSearchInput() {
+  if (debounce) clearTimeout(debounce);
+  debounce = setTimeout(load, 300);
+}
+function clearSearch() {
+  if (!q.value) return;
+  q.value = '';
+  load();
+}
+
+onMounted(load);
 
 function statusLabel(status: string) {
   if (status === 'RECRUIT') return '팀원 모집 중';
@@ -54,10 +74,27 @@ const emptyText: Record<Tab, string> = {
       </button>
     </nav>
 
+    <form class="searchbar" role="search" @submit.prevent="load">
+      <span class="search-ico" aria-hidden="true">🔍</span>
+      <input
+        v-model="q"
+        type="search"
+        class="search-input"
+        :placeholder="`${tabs.find((t) => t.key === activeTab)?.label} 프로젝트 검색 (제목·설명·역할·작성자)`"
+        aria-label="프로젝트 검색"
+        @input="onSearchInput"
+      />
+      <button v-if="searching" type="button" class="search-clear" aria-label="검색어 지우기" @click="clearSearch">
+        ✕
+      </button>
+    </form>
+
     <div v-if="store.loading">불러오는 중…</div>
     <div v-else-if="store.list.length === 0" class="empty card">
-      <p>{{ emptyText[activeTab] }}</p>
-      <RouterLink v-if="activeTab === 'RECRUIT'" to="/projects/new" class="btn primary">
+      <p v-if="searching">'{{ q.trim() }}'에 대한 검색 결과가 없습니다.</p>
+      <p v-else>{{ emptyText[activeTab] }}</p>
+      <button v-if="searching" type="button" class="btn" @click="clearSearch">검색 초기화</button>
+      <RouterLink v-else-if="activeTab === 'RECRUIT'" to="/projects/new" class="btn primary">
         첫 프로젝트 만들기
       </RouterLink>
     </div>
@@ -111,6 +148,54 @@ const emptyText: Record<Tab, string> = {
   border-bottom-color: var(--c-primary, #0066cc);
 }
 .tabs button:hover {
+  color: var(--c-ink, var(--c-fg));
+}
+.searchbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--c-canvas);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill, 999px);
+  padding: 8px 14px;
+  margin-bottom: var(--s-lg);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.searchbar:focus-within {
+  border-color: var(--c-primary, #0066cc);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-primary, #0066cc) 14%, transparent);
+}
+.search-ico {
+  font-size: 0.95rem;
+  opacity: 0.6;
+}
+.search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  color: var(--c-ink, var(--c-fg));
+}
+.search-input::-webkit-search-cancel-button {
+  display: none;
+}
+.search-clear {
+  appearance: none;
+  border: none;
+  background: var(--c-canvas-parchment, #f3f4f6);
+  color: var(--c-ink-muted-48, var(--c-fg-muted));
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.search-clear:hover {
+  background: var(--c-border, #e5e7eb);
   color: var(--c-ink, var(--c-fg));
 }
 .list {

@@ -10,6 +10,23 @@ export interface DashboardMember {
   role: string;
 }
 
+export type RiskLevel = 'none' | 'low' | 'medium' | 'high';
+
+export interface RiskFactor {
+  key: 'OVERDUE' | 'IMBALANCE' | 'TOXIC' | 'INACTIVITY';
+  label: string;
+  detail: string;
+  weight: number;
+}
+
+export interface RiskAssessment {
+  level: RiskLevel;
+  score: number;
+  factors: RiskFactor[];
+  summary: string;
+  assessedAt: string;
+}
+
 export interface ProjectDashboard {
   project: { id: string; title: string; status: string; startsAt: string | null; endsAt: string | null };
   windowDays: number;
@@ -26,6 +43,7 @@ export interface ProjectDashboard {
   schedule: {
     upcoming: Array<{ id: string; type: string; title: string; startsAt: string }>;
   };
+  risk: RiskAssessment;
   analysis: {
     evaluation: {
       count: number;
@@ -49,9 +67,28 @@ export interface ProjectDashboard {
   };
 }
 
+// 프리미엄 — AI 협업 분석 인사이트
+export interface Insight {
+  severity: 'positive' | 'info' | 'warn' | 'critical';
+  title: string;
+  detail: string;
+  action: string;
+}
+export interface InsightReport {
+  headline: string;
+  riskLevel: string;
+  riskScore: number;
+  insights: Insight[];
+  generatedAt: string;
+}
+
 export const dashboardApi = {
   async get(projectId: string, windowDays = 14): Promise<ProjectDashboard> {
     const { data } = await api.get<ProjectDashboard>(`/projects/${projectId}/dashboard`, { params: { windowDays } });
+    return data;
+  },
+  async insights(projectId: string, windowDays = 14): Promise<InsightReport> {
+    const { data } = await api.get<InsightReport>(`/projects/${projectId}/insights`, { params: { windowDays } });
     return data;
   },
 };

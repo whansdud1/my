@@ -102,11 +102,27 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
 
+  // 프리미엄 구독
+  {
+    path: '/subscription',
+    name: 'subscription',
+    component: () => import('../pages/subscription/Index.vue'),
+    meta: { requiresAuth: true },
+  },
+
   // 관리자 — 평가 리뷰 악성 탐지 검토 큐 (US8)
   {
     path: '/admin/moderation',
     name: 'admin-moderation',
     component: () => import('../pages/admin/Moderation.vue'),
+    meta: { requiresAuth: true, role: 'ADMIN' },
+  },
+
+  // 관리자 — 메인(첫 진입) 화면 편집(배너 이미지·문구)
+  {
+    path: '/admin/branding',
+    name: 'admin-branding',
+    component: () => import('../pages/admin/HomeBranding.vue'),
     meta: { requiresAuth: true, role: 'ADMIN' },
   },
 

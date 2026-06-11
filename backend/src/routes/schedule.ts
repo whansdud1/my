@@ -5,8 +5,9 @@ import { requireAuth, type AuthedRequest } from '../middlewares/auth.js';
 import { ok } from '../lib/envelope.js';
 import * as repo from '../repositories/schedule.js';
 import { computeCommonSlots } from '../services/schedule/commonSlots.js';
+import { optimizeMeetings } from '../services/schedule/optimize.js';
+import { requirePremium } from '../middlewares/premium.js';
 import * as svc from '../services/schedule/scheduleService.js';
-import { getCalendarProvider } from '../services/schedule/calendar/provider.js';
 
 // 003-schedule-coordination — T005/T007/T011/T016
 export const scheduleRouter = Router();
@@ -45,6 +46,26 @@ scheduleRouter.get(
         q.minMinutes,
       );
       res.json(ok({ totalMembers: total, slots }));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// --- GET /projects/:id/schedule/optimize — 프리미엄: AI 일정 최적화(최적 회의시간 추천) ---
+const optimizeQuery = z.object({
+  durationMin: z.coerce.number().int().min(30).max(240).optional().default(60),
+});
+scheduleRouter.get(
+  '/projects/:id/schedule/optimize',
+  requireAuth,
+  requirePremium,
+  validate({ query: optimizeQuery }),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const projectId = Number(req.params.id);
+      const q = req.query as unknown as z.infer<typeof optimizeQuery>;
+      res.json(ok(await optimizeMeetings(projectId, q.durationMin)));
     } catch (e) {
       next(e);
     }
@@ -155,39 +176,3 @@ scheduleRouter.post(
   },
 );
 
-// --- Calendar connection ---
-scheduleRouter.get('/calendar/connection', requireAuth, async (req: AuthedRequest, res, next) => {
-  try {
-    const conn = await repo.getConnection(req.user!.id);
-    res.json(
-      ok(
-        conn
-          ? { provider: conn.provider, syncState: conn.sync_state, connectedAt: conn.connected_at.toISOString() }
-          : { provider: 'GOOGLE', syncState: 'NONE', connectedAt: null },
-      ),
-    );
-  } catch (e) {
-    next(e);
-  }
-});
-
-scheduleRouter.put('/calendar/connection', requireAuth, async (req: AuthedRequest, res, next) => {
-  try {
-    // 실제 OAuth 콜백은 별도 통합 라우트에서 토큰을 받아 저장(WA-04 스텁: 연동 표시만)
-    const provider = getCalendarProvider();
-    const expires = provider.enabled ? new Date(Date.now() + 3600_000) : null;
-    await repo.upsertConnection(req.user!.id, expires);
-    res.json(ok({ provider: 'GOOGLE', syncState: 'ACTIVE', enabled: provider.enabled }));
-  } catch (e) {
-    next(e);
-  }
-});
-
-scheduleRouter.delete('/calendar/connection', requireAuth, async (req: AuthedRequest, res, next) => {
-  try {
-    await repo.setConnectionState(req.user!.id, 'DISCONNECTED');
-    res.json(ok({ disconnected: true }));
-  } catch (e) {
-    next(e);
-  }
-});

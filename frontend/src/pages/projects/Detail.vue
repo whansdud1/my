@@ -467,6 +467,7 @@ async function deleteProject() {
             <div class="arow">
               <div class="ainfo">
                 <strong>{{ a.name }}</strong>
+                <span v-if="a.premium" class="premium-tag" title="프리미엄 구독자 · 우선 매칭">★ 프리미엄</span>
                 <span class="role">{{ a.role }}</span>
                 <span class="arating" v-if="applicantRep[a.userId]">
                   <StarRating :model-value="applicantRep[a.userId].stars" readonly :size="15" />
@@ -884,9 +885,26 @@ textarea.eval-comment {
   color: var(--c-fg-muted);
   font-size: 0.85rem;
 }
+.premium-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #b45309;
+  background: #fef3c7;
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
 .invite {
   display: flex;
   gap: 6px;
+}
+.invite .input {
+  flex: 1;
+  min-width: 0;
+}
+.invite .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .actions {
   list-style: none;
