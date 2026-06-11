@@ -62,37 +62,45 @@ export interface ListFilters {
 }
 
 export async function list(f: ListFilters): Promise<{ items: ProjectRow[]; total: number }> {
+  // owner 조인 — 작성자 이름(users.name) 검색에 사용.
   const where: string[] = ['1=1'];
   const params: unknown[] = [];
   if (f.status) {
-    where.push('status = ?');
+    where.push('p.status = ?');
     params.push(f.status);
   }
   if (f.ownerId) {
-    where.push('owner_id = ?');
+    where.push('p.owner_id = ?');
     params.push(f.ownerId);
   }
   if (f.q) {
-    where.push('(title LIKE ? OR description LIKE ?)');
+    // 제목·설명·작성자 이름·모집 역할(required_roles JSON)까지 검색.
+    // 역할은 LOWER 로 대소문자 무시(JSON 은 기본 case-sensitive)하고 $[*].role 경로만 대상으로 한다.
+    where.push(
+      `(p.title LIKE ? OR p.description LIKE ? OR u.name LIKE ?
+        OR JSON_SEARCH(LOWER(p.required_roles), 'one', LOWER(?), NULL, '$[*].role') IS NOT NULL)`,
+    );
     const like = `%${f.q}%`;
-    params.push(like, like);
+    params.push(like, like, like, like);
   }
   // 모집 완료 후 1일이 지난 '모집 중' 프로젝트는 목록에서 숨김.
   // (RUNNING 등 시작된 프로젝트는 recruit_closed_at 이 오래돼도 계속 노출)
   where.push(
-    `(status <> 'RECRUIT' OR recruit_closed_at IS NULL OR recruit_closed_at >= NOW(3) - INTERVAL 1 DAY)`,
+    `(p.status <> 'RECRUIT' OR p.recruit_closed_at IS NULL OR p.recruit_closed_at >= NOW(3) - INTERVAL 1 DAY)`,
   );
   const page = f.page && f.page > 0 ? f.page : 1;
   const pageSize = Math.min(Math.max(f.pageSize ?? 20, 1), 100);
   const offset = (page - 1) * pageSize;
 
+  const FROM = `FROM projects p JOIN users u ON u.id = p.owner_id`;
+
   const [countRows] = (await getPool().query(
-    `SELECT COUNT(*) AS cnt FROM projects WHERE ${where.join(' AND ')}`,
+    `SELECT COUNT(*) AS cnt ${FROM} WHERE ${where.join(' AND ')}`,
     params,
   )) as unknown as [Array<{ cnt: number }>];
 
   const [rows] = (await getPool().query(
-    `SELECT * FROM projects WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    `SELECT p.* ${FROM} WHERE ${where.join(' AND ')} ORDER BY p.created_at DESC LIMIT ? OFFSET ?`,
     [...params, pageSize, offset],
   )) as unknown as [ProjectRow[]];
 

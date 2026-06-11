@@ -1,13 +1,11 @@
 import { nanoid } from 'nanoid';
 import { Errors } from '../../lib/envelope.js';
-import { logger } from '../../lib/logger.js';
 import * as repo from '../../repositories/schedule.js';
 import * as Projects from '../../repositories/projects.js';
 import { notify } from '../notification/index.js';
-import { getCalendarProvider } from './calendar/provider.js';
 
 // 003-schedule-coordination — T010/T012/T017
-// 일정 생성·변경·취소·RSVP + 002 알림 연동 + 캘린더 단방향 동기화
+// 일정 생성·변경·취소·RSVP + 002 알림 연동
 
 const REPEAT_MAX = Number.parseInt(process.env.SCHEDULE_REPEAT_MAX_WEEKS ?? '8', 10);
 
@@ -73,9 +71,6 @@ export async function createEvent(input: CreateEventInput): Promise<number[]> {
     targetRef: `event:${ids[0]}`,
   });
 
-  // 캘린더 동기화(연동 사용자만, 단방향)
-  for (const id of ids) void syncEventToCalendars(id).catch((e) => logger.error({ err: e, id }, 'calendar sync 실패'));
-
   return ids;
 }
 
@@ -99,8 +94,6 @@ export async function updateEvent(
     deepLink: `/projects/${ev.project_id}/schedule`,
     targetRef: `event:${eventId}`,
   });
-
-  void syncEventToCalendars(eventId).catch((e) => logger.error({ err: e, eventId }, 'calendar sync 실패'));
 }
 
 export async function cancelEvent(eventId: number, actorId: number): Promise<void> {
@@ -109,11 +102,6 @@ export async function cancelEvent(eventId: number, actorId: number): Promise<voi
   await assertOwner(ev.project_id, actorId);
 
   await repo.cancelEvent(eventId);
-
-  // 캘린더에서 제거
-  const maps = await repo.getSyncMaps(eventId);
-  const provider = getCalendarProvider();
-  for (const m of maps) await provider.deleteEvent(m.user_id, m.external_event_id).catch(() => undefined);
 
   notify('SCHEDULE_CHANGE', {
     projectId: ev.project_id,
@@ -134,27 +122,6 @@ export async function respondRsvp(
   const members = await repo.memberUserIds(ev.project_id);
   if (!members.includes(userId)) throw Errors.Forbidden('팀원만 응답할 수 있습니다');
   await repo.setRsvp(eventId, userId, response);
-}
-
-// 연동 사용자 캘린더에 일정 반영(생성/수정) — 단방향
-export async function syncEventToCalendars(eventId: number): Promise<void> {
-  const ev = await repo.findEvent(eventId);
-  if (!ev || ev.status !== 'SCHEDULED') return;
-  const members = await repo.memberUserIds(ev.project_id);
-  const active = await repo.activeConnectionUserIds(members);
-  if (!active.length) return;
-  const provider = getCalendarProvider();
-  const existing = new Map((await repo.getSyncMaps(eventId)).map((m) => [m.user_id, m.external_event_id]));
-  for (const uid of active) {
-    const ext = await provider.upsertEvent(uid, {
-      title: ev.title,
-      description: ev.description,
-      startsAt: ev.starts_at,
-      endsAt: ev.ends_at,
-      externalEventId: existing.get(uid) ?? null,
-    });
-    await repo.upsertSyncMap(eventId, uid, ext);
-  }
 }
 
 function describeType(t: repo.EventType): string {

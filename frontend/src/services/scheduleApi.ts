@@ -38,15 +38,38 @@ export interface EventCreate {
   repeatWeeks?: number;
 }
 
-export interface CalendarConnection {
-  provider: string;
-  syncState: 'ACTIVE' | 'EXPIRED' | 'DISCONNECTED' | 'NONE';
-  connectedAt: string | null;
+export interface MeetingRecommendation {
+  weekday: number;
+  weekdayLabel: string;
+  startMin: number;
+  endMin: number;
+  windowEndMin: number;
+  timeLabel: string;
+  availableCount: number;
+  totalMembers: number;
+  allAvailable: boolean;
+  score: number;
+  reasons: string[];
+}
+
+export interface OptimizeResult {
+  totalMembers: number;
+  durationMin: number;
+  workTimePref: 'DAY' | 'NIGHT' | 'ANY';
+  recommendations: MeetingRecommendation[];
+  note: string;
 }
 
 export const scheduleApi = {
   async commonSlots(projectId: string, minMinutes = 30): Promise<{ totalMembers: number; slots: CommonSlot[] }> {
     const { data } = await api.get(`/projects/${projectId}/schedule/common-slots`, { params: { minMinutes } });
+    return data;
+  },
+  // 프리미엄: AI 일정 최적화(최적 회의시간 추천)
+  async optimize(projectId: string, durationMin = 60): Promise<OptimizeResult> {
+    const { data } = await api.get<OptimizeResult>(`/projects/${projectId}/schedule/optimize`, {
+      params: { durationMin },
+    });
     return data;
   },
   async listEvents(projectId: string): Promise<ScheduleEvent[]> {
@@ -66,15 +89,5 @@ export const scheduleApi = {
   },
   async rsvp(eid: string, response: 'ATTEND' | 'DECLINE'): Promise<void> {
     await api.post(`/schedule/events/${eid}/rsvp`, { response });
-  },
-  async getConnection(): Promise<CalendarConnection> {
-    const { data } = await api.get<CalendarConnection>('/calendar/connection');
-    return data;
-  },
-  async connectCalendar(): Promise<void> {
-    await api.put('/calendar/connection');
-  },
-  async disconnectCalendar(): Promise<void> {
-    await api.delete('/calendar/connection');
   },
 };

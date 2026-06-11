@@ -80,6 +80,8 @@ function fmt(iso: string): string {
   max-height: 460px;
   overflow-y: auto;
   background: var(--c-bg, #fff);
+  /* 패널이 흰 글씨의 다크 헤더(.global-nav) 안에 렌더되므로 글씨색을 명시적으로 되돌린다 */
+  color: var(--c-ink, #1d1d1f);
   border: 1px solid var(--c-border, #e5e7eb);
   border-radius: 12px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);

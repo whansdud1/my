@@ -19,6 +19,7 @@ export interface NotificationEvent {
   body: string;
   deepLink?: string;
   targetRef?: string; // dedup·삭제 참조 (예: 'project:12')
+  excludeUserId?: number; // 팀 대상 알림에서 제외할 사용자(예: 메시지 발신자 본인)
 }
 
 // 5분 버킷 dedup 키 (FR-E1 / SC-05)
@@ -30,6 +31,10 @@ function dedupKey(recipientId: number, type: string, targetRef?: string): string
 // audience → 실제 수신자 id 목록 결정 (WA-03: COLLAB_RISK 는 팀장만)
 async function resolveRecipients(ev: NotificationEvent, audience: repo.Audience): Promise<number[]> {
   if (ev.recipientId) return [ev.recipientId];
+
+  // 팀 대상 알림에서 본인(발신자) 제외용 필터
+  const exclude = (ids: number[]): number[] =>
+    ev.excludeUserId ? ids.filter((id) => id !== ev.excludeUserId) : ids;
 
   if (audience === 'ADMIN') {
     const [rows] = (await getPool().query(
@@ -46,12 +51,12 @@ async function resolveRecipients(ev: NotificationEvent, audience: repo.Audience)
       ])) as unknown as [Array<{ owner_id: number }>];
       return rows[0] ? [rows[0].owner_id] : [];
     }
-    // TEAM: ACCEPTED 멤버 전원
+    // TEAM: ACCEPTED 멤버 전원(발신자 제외 가능)
     const [rows] = (await getPool().query(
       `SELECT user_id FROM project_members WHERE project_id = ? AND state = 'ACCEPTED'`,
       [ev.projectId],
     )) as unknown as [Array<{ user_id: number }>];
-    return rows.map((r) => r.user_id);
+    return exclude(rows.map((r) => r.user_id));
   }
 
   logger.warn({ type: ev.type, audience }, 'notification: 수신자를 결정할 수 없음');

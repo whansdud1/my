@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue';
-import { useRoute } from 'vue-router';
+import { RouterLink, useRoute } from 'vue-router';
 import { useScheduleStore } from '../../stores/scheduleStore';
 import { useNotificationsStore } from '../../stores/notifications';
-import { scheduleApi, type CommonSlot, type EventCreate, type CalendarConnection } from '../../services/scheduleApi';
+import { useAuthStore } from '../../stores/auth';
+import { scheduleApi, type CommonSlot, type EventCreate, type MeetingRecommendation } from '../../services/scheduleApi';
 import CommonSlots from '../../components/CommonSlots.vue';
 import MeetingForm from '../../components/MeetingForm.vue';
 
@@ -11,17 +12,34 @@ import MeetingForm from '../../components/MeetingForm.vue';
 const route = useRoute();
 const store = useScheduleStore();
 const toast = useNotificationsStore();
+const auth = useAuthStore();
 const projectId = String(route.params.id);
-const conn = ref<CalendarConnection | null>(null);
 
 const TYPE_LABEL: Record<string, string> = { MEETING: '회의', DEADLINE: '마감', MILESTONE: '산출물' };
 
+// 프리미엄 — AI 일정 최적화
+const isPremium = computed(() => !!auth.user?.premium);
+const recs = ref<MeetingRecommendation[] | null>(null);
+const optimizeNote = ref('');
+const optimizing = ref(false);
+
+async function runOptimize() {
+  optimizing.value = true;
+  try {
+    const res = await scheduleApi.optimize(projectId, 60);
+    recs.value = res.recommendations;
+    optimizeNote.value = res.note;
+  } catch (e) {
+    const err = e as { detail?: string; title?: string };
+    toast.error(err.detail ?? err.title ?? '최적화에 실패했습니다');
+  } finally {
+    optimizing.value = false;
+  }
+}
+
 onMounted(async () => {
   await store.load(projectId);
-  conn.value = await scheduleApi.getConnection();
 });
-
-const calendarConnected = computed(() => conn.value?.syncState === 'ACTIVE');
 
 function pickSlot(_s: CommonSlot) {
   toast.info('아래 폼에서 해당 시간으로 회의를 생성하세요');
@@ -52,12 +70,6 @@ async function onCancel(eid: string) {
   }
 }
 
-async function toggleCalendar() {
-  if (calendarConnected.value) await scheduleApi.disconnectCalendar();
-  else await scheduleApi.connectCalendar();
-  conn.value = await scheduleApi.getConnection();
-}
-
 function fmt(iso: string): string {
   return new Date(iso).toLocaleString();
 }
@@ -70,16 +82,47 @@ function attendCount(rsvps: { response: string }[]): number {
   <section class="page">
     <h1>프로젝트 일정</h1>
 
-    <label class="cal-toggle">
-      <input type="checkbox" :checked="calendarConnected" @change="toggleCalendar" />
-      Google Calendar 동기화 {{ calendarConnected ? '켜짐' : '꺼짐' }}
-    </label>
-
     <div v-if="store.loading">불러오는 중…</div>
     <template v-else>
       <div class="grid">
         <CommonSlots :slots="store.slots" :total-members="store.totalMembers" @pick="pickSlot" />
         <MeetingForm @submit="onCreate" />
+      </div>
+
+      <!-- 프리미엄: AI 일정 최적화 -->
+      <div class="optimize-card">
+        <div class="opt-head">
+          <h3>AI 일정 최적화 <span class="pchip">PREMIUM</span></h3>
+          <button v-if="isPremium" class="btn small primary" :disabled="optimizing" @click="runOptimize">
+            {{ optimizing ? '분석 중…' : '최적 회의시간 추천' }}
+          </button>
+        </div>
+
+        <div v-if="!isPremium" class="opt-upsell">
+          <p>팀원 가용시간·시간대 선호·기존 일정을 종합해 <b>가장 좋은 정기 회의 시간</b>을 AI가 추천합니다.</p>
+          <RouterLink to="/subscription" class="btn small primary">프리미엄으로 잠금 해제</RouterLink>
+        </div>
+
+        <template v-else-if="recs">
+          <p v-if="recs.length === 0" class="hint">{{ optimizeNote }}</p>
+          <ol v-else class="recs">
+            <li v-for="(r, i) in recs" :key="i" class="rec">
+              <div class="rec-main">
+                <span class="rec-rank">{{ i + 1 }}</span>
+                <div>
+                  <strong>{{ r.weekdayLabel }}요일 {{ r.timeLabel }}</strong>
+                  <span class="rec-cov" :class="{ all: r.allAvailable }">
+                    {{ r.allAvailable ? '전원 가능' : `${r.availableCount}/${r.totalMembers}명` }}
+                  </span>
+                </div>
+                <span class="rec-score">{{ r.score }}점</span>
+              </div>
+              <p class="rec-why">{{ r.reasons.join(' · ') }}</p>
+            </li>
+          </ol>
+          <p v-if="recs.length" class="hint">{{ optimizeNote }}</p>
+        </template>
+        <p v-else class="hint">버튼을 눌러 추천을 받아보세요.</p>
       </div>
 
       <h3>등록된 일정</h3>
@@ -104,7 +147,6 @@ function attendCount(rsvps: { response: string }[]): number {
 </template>
 
 <style scoped>
-.cal-toggle { display: inline-flex; gap: 8px; align-items: center; margin: 8px 0 16px; font-size: 0.9rem; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
 @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
 .hint { color: var(--c-fg-muted, #6b7280); font-size: 0.9rem; }
@@ -119,4 +161,20 @@ function attendCount(rsvps: { response: string }[]): number {
 .link.danger { color: var(--c-danger, #ef4444); margin-left: auto; }
 .btn.small { padding: 3px 10px; font-size: 0.78rem; }
 .btn.ghost { background: none; border: 1px solid var(--c-border, #e5e7eb); }
+
+/* 프리미엄 AI 일정 최적화 */
+.optimize-card { border: 1px solid #fde68a; border-radius: 12px; padding: 16px; margin: 8px 0 24px; background: linear-gradient(180deg, #fffbeb, var(--c-surface, #fff) 60%); }
+.opt-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.opt-head h3 { margin: 0; display: flex; align-items: center; gap: 8px; }
+.pchip { font-size: 0.62rem; font-weight: 800; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 999px; background: #fef3c7; color: #b45309; }
+.opt-upsell { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-top: 10px; }
+.opt-upsell p { margin: 0; font-size: 0.9rem; }
+.recs { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.rec { border: 1px solid var(--c-border, #e5e7eb); border-radius: 10px; padding: 10px 12px; background: var(--c-surface, #fff); }
+.rec-main { display: flex; align-items: center; gap: 10px; }
+.rec-rank { flex-shrink: 0; width: 22px; height: 22px; border-radius: 999px; background: #fef3c7; color: #b45309; font-weight: 800; font-size: 0.78rem; display: flex; align-items: center; justify-content: center; }
+.rec-cov { margin-left: 8px; font-size: 0.74rem; font-weight: 700; color: #1d4ed8; }
+.rec-cov.all { color: #15803d; }
+.rec-score { margin-left: auto; font-weight: 800; }
+.rec-why { margin: 6px 0 0; font-size: 0.82rem; color: var(--c-fg-muted, #6b7280); }
 </style>

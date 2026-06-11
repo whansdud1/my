@@ -29,6 +29,8 @@ export class DomainError extends Error {
 export const Errors = {
   Unauthorized: (msg = '인증이 필요합니다') => new DomainError('UNAUTHORIZED', 401, msg),
   Forbidden: (msg = '권한이 없습니다') => new DomainError('FORBIDDEN', 403, msg),
+  PaymentRequired: (msg = '프리미엄 구독이 필요한 기능입니다') =>
+    new DomainError('PAYMENT_REQUIRED', 402, msg),
   NotFound: (msg = '리소스를 찾을 수 없습니다') => new DomainError('NOT_FOUND', 404, msg),
   Conflict: (msg = '리소스 충돌') => new DomainError('CONFLICT', 409, msg),
   Validation: (msg = '입력값이 올바르지 않습니다', details?: Record<string, unknown>) =>

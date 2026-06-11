@@ -51,7 +51,7 @@ onMounted(load);
 
 <template>
   <section class="page">
-    <h1>리뷰 검토 큐 <span v-if="pendingCount" class="pending">{{ pendingCount }}건 대기</span></h1>
+    <h1>리뷰 검토 <span v-if="pendingCount" class="pending">{{ pendingCount }}건 대기</span></h1>
     <p class="hint">
       평가 리뷰에서 악성 텍스트(욕설·인격모독) 또는 허위/보복성 별점으로 탐지된 항목입니다.
       유지하면 정상 노출되고, 삭제하면 차단(코멘트 제거·평점 평균에서 제외)됩니다.

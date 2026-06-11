@@ -6,6 +6,7 @@ import { ok, Errors } from '../lib/envelope.js';
 import * as Users from '../repositories/users.js';
 import * as Availabilities from '../repositories/availabilities.js';
 import * as Consents from '../repositories/consents.js';
+import * as Subscriptions from '../repositories/subscriptions.js';
 import { getPool } from '../db/connection.js';
 import { audit } from '../services/audit.js';
 
@@ -35,7 +36,8 @@ usersRouter.get('/users/me', requireAuth, async (req: AuthedRequest, res, next) 
   try {
     const user = await Users.findById(req.user!.id);
     if (!user) throw Errors.NotFound();
-    res.json(ok(projectMe(user)));
+    const premium = await Subscriptions.isPremium(req.user!.id);
+    res.json(ok({ ...projectMe(user), premium }));
   } catch (e) {
     next(e);
   }

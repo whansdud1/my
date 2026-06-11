@@ -1,17 +1,37 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue';
 import { useRoute, RouterLink } from 'vue-router';
-import { dashboardApi, type ProjectDashboard, type ActivityType } from '../../services/dashboardApi';
+import { dashboardApi, type ProjectDashboard, type ActivityType, type RiskLevel, type InsightReport } from '../../services/dashboardApi';
 import { useNotificationsStore } from '../../stores/notifications';
+import { useAuthStore } from '../../stores/auth';
 
 // 016 — 팀 활동 실시간 모니터링 + 만족도/효율 분석 대시보드(To-Be ④·⑥)
 const route = useRoute();
 const toast = useNotificationsStore();
+const auth = useAuthStore();
 const projectId = String(route.params.id);
 
 const data = ref<ProjectDashboard | null>(null);
 const loading = ref(true);
 const windowDays = ref(14);
+
+// 프리미엄 — AI 협업 분석 인사이트
+const isPremium = computed(() => !!auth.user?.premium);
+const insights = ref<InsightReport | null>(null);
+const insightsLoading = ref(false);
+const SEV_LABEL: Record<string, string> = { positive: '좋음', info: '참고', warn: '주의', critical: '중요' };
+
+async function loadInsights() {
+  if (!isPremium.value) return;
+  insightsLoading.value = true;
+  try {
+    insights.value = await dashboardApi.insights(projectId, windowDays.value);
+  } catch {
+    /* 인사이트 실패는 대시보드 본문에 영향 주지 않음 */
+  } finally {
+    insightsLoading.value = false;
+  }
+}
 
 const ACT_LABEL: Record<ActivityType, string> = {
   MEETING_JOIN: '회의 참여',
@@ -23,10 +43,17 @@ const ACT_LABEL: Record<ActivityType, string> = {
 const TYPE_LABEL: Record<string, string> = { MEETING: '회의', DEADLINE: '마감', MILESTONE: '산출물' };
 const ACT_ORDER: ActivityType[] = ['MEETING_JOIN', 'UPLOAD', 'MESSAGE_RESP', 'DEADLINE_MET', 'DEADLINE_MISS'];
 
+// 팀 갈등(협업) 위험 레벨 표시
+const RISK_LABEL: Record<RiskLevel, string> = { none: '양호', low: '주의', medium: '경고', high: '위험' };
+function riskIcon(l: RiskLevel): string {
+  return l === 'high' ? '🚨' : l === 'medium' ? '⚠️' : l === 'low' ? '🟡' : '✅';
+}
+
 async function load() {
   loading.value = true;
   try {
     data.value = await dashboardApi.get(projectId, windowDays.value);
+    void loadInsights();
   } catch (e) {
     const err = e as { detail?: string; title?: string };
     toast.error(err.detail ?? err.title ?? '대시보드를 불러오지 못했습니다');
@@ -90,6 +117,50 @@ function stars(n: number): string {
         <div class="kpi" v-if="data.analysis.evaluation">
           <span class="kpi-num">{{ data.analysis.evaluation.overall }}</span><span class="kpi-lbl">평균 만족도</span>
         </div>
+      </div>
+
+      <!-- 팀 갈등(협업) 위험 -->
+      <div class="risk-card" :class="`risk-${data.risk.level}`">
+        <div class="risk-head">
+          <span class="risk-icon">{{ riskIcon(data.risk.level) }}</span>
+          <div class="risk-title">
+            <h3>팀 갈등 위험 <span class="risk-badge">{{ RISK_LABEL[data.risk.level] }}</span></h3>
+            <p class="risk-summary">{{ data.risk.summary }}</p>
+          </div>
+          <span class="risk-score">{{ data.risk.score }}<small>/100</small></span>
+        </div>
+        <ul v-if="data.risk.factors.length" class="risk-factors">
+          <li v-for="(f, i) in data.risk.factors" :key="i">
+            <strong>{{ f.label }}</strong>
+            <span>{{ f.detail }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- 프리미엄: AI 협업 분석 인사이트 -->
+      <div class="insight-card">
+        <div class="insight-head">
+          <h3>AI 협업 인사이트 <span class="pchip">PREMIUM</span></h3>
+          <span v-if="isPremium && insights" class="ihead-line">{{ insights.headline }}</span>
+        </div>
+
+        <template v-if="!isPremium">
+          <div class="upsell">
+            <p>마감·참여·갈등 신호를 분석해 <b>지금 무엇을 해야 하는지</b> AI가 제안합니다.</p>
+            <RouterLink to="/subscription" class="btn primary">프리미엄으로 잠금 해제</RouterLink>
+          </div>
+        </template>
+        <template v-else>
+          <p v-if="insightsLoading" class="muted">분석 중…</p>
+          <p v-else-if="!insights || insights.insights.length === 0" class="muted">표시할 인사이트가 없습니다.</p>
+          <ul v-else class="insights">
+            <li v-for="(it, i) in insights.insights" :key="i" :class="`sev-${it.severity}`">
+              <div class="ititle"><span class="sev">{{ SEV_LABEL[it.severity] }}</span>{{ it.title }}</div>
+              <p class="idetail">{{ it.detail }}</p>
+              <p class="iaction">→ {{ it.action }}</p>
+            </li>
+          </ul>
+        </template>
       </div>
 
       <div class="grid">
@@ -253,6 +324,51 @@ h1 { margin: 4px 0 0; }
 .eff-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
 .eff-table th, .eff-table td { padding: 5px 6px; text-align: center; border-bottom: 1px solid var(--c-bg-subtle, #f3f4f6); }
 .eff-table th:first-child, .eff-table td:first-child { text-align: left; }
+/* 프리미엄 AI 인사이트 패널 */
+.insight-card { border: 1px solid #fde68a; border-radius: 12px; padding: 16px; margin-bottom: 16px; background: linear-gradient(180deg, #fffbeb, var(--c-surface, #fff) 60%); }
+.insight-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.insight-head h3 { margin: 0; font-size: 1rem; display: flex; align-items: center; gap: 8px; }
+.pchip { font-size: 0.62rem; font-weight: 800; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 999px; background: #fef3c7; color: #b45309; }
+.ihead-line { font-size: 0.84rem; color: var(--c-fg-muted, #6b7280); }
+.upsell { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.upsell p { margin: 0; font-size: 0.9rem; }
+.insights { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.insights li { border-left: 4px solid var(--c-border, #e5e7eb); padding: 4px 0 4px 12px; }
+.insights li.sev-critical { border-left-color: #ef4444; }
+.insights li.sev-warn { border-left-color: #f59e0b; }
+.insights li.sev-info { border-left-color: #2563eb; }
+.insights li.sev-positive { border-left-color: #16a34a; }
+.ititle { font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; gap: 8px; }
+.sev { font-size: 0.64rem; font-weight: 800; padding: 1px 7px; border-radius: 999px; background: var(--c-bg-subtle, #f3f4f6); color: var(--c-fg-muted, #6b7280); }
+.sev-critical .sev { background: #fee2e2; color: #b91c1c; }
+.sev-warn .sev { background: #fef3c7; color: #b45309; }
+.sev-info .sev { background: #dbeafe; color: #1d4ed8; }
+.sev-positive .sev { background: #dcfce7; color: #15803d; }
+.idetail { margin: 4px 0 2px; font-size: 0.84rem; color: var(--c-fg-muted, #6b7280); }
+.iaction { margin: 0; font-size: 0.84rem; color: var(--c-ink, #111827); }
+
+/* 팀 갈등 위험 패널 */
+.risk-card { border: 1px solid var(--c-border, #e5e7eb); border-radius: 12px; padding: 16px; margin-bottom: 16px; border-left-width: 5px; background: var(--c-surface, #fff); }
+.risk-card.risk-none { border-left-color: #16a34a; }
+.risk-card.risk-low { border-left-color: #2563eb; }
+.risk-card.risk-medium { border-left-color: #f59e0b; background: #fffbeb; }
+.risk-card.risk-high { border-left-color: #ef4444; background: #fef2f2; }
+.risk-head { display: flex; align-items: center; gap: 12px; }
+.risk-icon { font-size: 1.6rem; }
+.risk-title { flex: 1; min-width: 0; }
+.risk-title h3 { margin: 0; font-size: 1rem; display: flex; align-items: center; gap: 8px; }
+.risk-badge { font-size: 0.74rem; font-weight: 700; padding: 2px 10px; border-radius: 999px; background: var(--c-bg-subtle, #f3f4f6); }
+.risk-none .risk-badge { background: #dcfce7; color: #15803d; }
+.risk-low .risk-badge { background: #dbeafe; color: #1d4ed8; }
+.risk-medium .risk-badge { background: #fef3c7; color: #b45309; }
+.risk-high .risk-badge { background: #fee2e2; color: #b91c1c; }
+.risk-summary { margin: 4px 0 0; font-size: 0.84rem; color: var(--c-fg-muted, #6b7280); }
+.risk-score { font-size: 1.5rem; font-weight: 700; }
+.risk-score small { font-size: 0.7rem; color: var(--c-fg-muted, #9ca3af); font-weight: 500; }
+.risk-factors { list-style: none; padding: 12px 0 0; margin: 12px 0 0; border-top: 1px solid var(--c-bg-subtle, #f3f4f6); display: flex; flex-direction: column; gap: 6px; }
+.risk-factors li { font-size: 0.84rem; display: flex; gap: 8px; flex-wrap: wrap; }
+.risk-factors strong { flex-shrink: 0; }
+.risk-factors span { color: var(--c-fg-muted, #6b7280); }
 .btn { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--c-border, #e5e7eb); background: var(--c-surface, #fff); cursor: pointer; font: inherit; text-decoration: none; color: inherit; font-size: 0.82rem; }
 .empty { color: var(--c-fg-muted, #6b7280); text-align: center; padding: 32px 0; }
 </style>

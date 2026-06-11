@@ -3,6 +3,7 @@ import { Errors } from '../../lib/envelope.js';
 import * as Projects from '../../repositories/projects.js';
 import * as Members from '../../repositories/projectMembers.js';
 import * as Tasks from '../../repositories/tasks.js';
+import { assessProject, type RiskAssessment } from '../collabRisk/index.js';
 
 // 016 — 팀 활동 실시간 모니터링 + 만족도/협업효율 분석 대시보드(To-Be ④·⑥).
 // 별도 테이블 없이 기존 데이터(collaboration_activities / project_tasks / schedule_events /
@@ -33,6 +34,7 @@ export interface ProjectDashboard {
   schedule: {
     upcoming: Array<{ id: string; type: string; title: string; startsAt: string }>;
   };
+  risk: RiskAssessment;
   analysis: {
     evaluation: {
       count: number;
@@ -186,6 +188,9 @@ export async function getDashboard(projectId: number, actorId: number, windowDay
   const sr = starRows[0];
   const peerStars = sr && Number(sr.cnt) > 0 ? { avg: round2(Number(sr.avg)), count: Number(sr.cnt) } : null;
 
+  // --- 팀 갈등(협업) 위험 평가 ---
+  const risk = await assessProject(projectId, windowDays);
+
   // --- AI 협업효율(ai_scores, 프로젝트 단위) ---
   const [aiRows] = (await pool.query(
     `SELECT a.user_id, u.name, a.total, a.meeting_rate, a.upload_rate, a.deadline_rate,
@@ -230,6 +235,7 @@ export async function getDashboard(projectId: number, actorId: number, windowDay
     activity: { totals, byMember: activityByMember, recent },
     tasks: { stats: taskStats, byMember: tasksByMember },
     schedule: { upcoming },
+    risk,
     analysis: { evaluation, peerStars, efficiency },
   };
 }

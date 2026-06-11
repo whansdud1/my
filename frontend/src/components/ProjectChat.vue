@@ -667,13 +667,13 @@ watch(
                   ⚠ 재전송
                 </button>
                 <span v-else class="meta">
-                  <!-- 내 메시지: 읽음 표시 -->
+                  <!-- 내 메시지: 안 읽은 사람 수 표시(카톡식). 전원 읽으면 '모두 읽음' -->
                   <span
-                    v-if="m.userId === myId && otherCount > 0 && readersOf(m) > 0"
+                    v-if="m.userId === myId && otherCount > 0"
                     class="rcpt"
                     :class="{ all: readersOf(m) >= otherCount }"
                   >
-                    {{ readersOf(m) >= otherCount ? '모두 읽음' : `읽음 ${readersOf(m)}` }}
+                    {{ readersOf(m) >= otherCount ? '모두 읽음' : otherCount - readersOf(m) }}
                   </span>
                   <span v-if="showTime(i)" class="time">{{ fmtTime(m.createdAt) }}</span>
                 </span>

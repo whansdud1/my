@@ -132,17 +132,20 @@ export async function apply(projectId: number, userId: number, role: string): Pr
   return res.insertId;
 }
 
-// 특정 프로젝트의 지원자(APPLIED) 목록 + 지원자 이름.
+// 특정 프로젝트의 지원자(APPLIED) 목록 + 지원자 이름 + 프리미엄 여부.
+// 프리미엄 구독자 우선 매칭: is_premium DESC 로 상위 정렬, 그 안에서 선착순(created_at).
 export async function findApplicants(
   projectId: number,
-): Promise<Array<MemberRow & { name: string }>> {
+): Promise<Array<MemberRow & { name: string; is_premium: number }>> {
   const [rows] = (await getPool().query(
-    `SELECT pm.*, u.name AS name
+    `SELECT pm.*, u.name AS name,
+            (s.tier = 'PREMIUM' AND (s.ends_at IS NULL OR s.ends_at > NOW(3))) AS is_premium
        FROM project_members pm
        JOIN users u ON u.id = pm.user_id
+       LEFT JOIN subscriptions s ON s.user_id = pm.user_id
       WHERE pm.project_id = ? AND pm.state = 'APPLIED'
-      ORDER BY pm.created_at`,
+      ORDER BY is_premium DESC, pm.created_at`,
     [projectId],
-  )) as unknown as [Array<MemberRow & { name: string }>];
+  )) as unknown as [Array<MemberRow & { name: string; is_premium: number }>];
   return rows;
 }

@@ -7,6 +7,7 @@ interface User {
   name: string;
   role: 'STUDENT' | 'PROFESSOR' | 'ADMIN';
   emailVerified: boolean;
+  premium?: boolean; // 프리미엄 구독 여부(/users/me 에서 제공)
 }
 
 export const useAuthStore = defineStore('auth', {
@@ -18,7 +19,13 @@ export const useAuthStore = defineStore('auth', {
     storage: sessionStorage,
     paths: ['accessToken', 'user'],
   },
+  getters: {
+    isPremium: (state): boolean => !!state.user?.premium,
+  },
   actions: {
+    setPremium(v: boolean) {
+      if (this.user) this.user.premium = v;
+    },
     setToken(token: string | null) {
       this.accessToken = token;
       writeAccessToken(token);
