@@ -898,6 +898,14 @@ textarea.eval-comment {
   display: flex;
   gap: 6px;
 }
+.invite .input {
+  flex: 1;
+  min-width: 0;
+}
+.invite .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .actions {
   list-style: none;
   padding: 0;
